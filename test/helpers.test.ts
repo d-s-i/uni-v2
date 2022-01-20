@@ -1,6 +1,6 @@
 import hre from "hardhat";
 import { BigNumber, ethers } from "ethers";
-import { parseEther, hexValue } from "ethers/lib/utils";
+import { parseEther, hexValue, formatEther } from "ethers/lib/utils";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { Provider } from "@ethersproject/abstract-provider";
 
@@ -89,4 +89,32 @@ const calcGasFeesOfTx = async function(hash: string) {
     const gasPrice = receipt.effectiveGasPrice;
     const gasFees = gasPrice.mul(gasUsed);
     return gasFees;
+}
+
+export const swapTokensForExactETHFroMContract = async function(
+    signer: SignerWithAddress,
+    amountOut: BigNumber
+) {
+    const tempRouter = router.connect(signer);
+    const deadline = await getDeadline(deployer.provider!);
+
+    let tempToken0 = token0.connect(deployer);
+    await token0.transfer(signer.address, parseEther("100000"));
+    
+    tempToken0 = tempToken0.connect(signer);
+    const app_tx = await tempToken0.approve(router.address, BigInt(2**255));
+
+    const app_fees = await calcGasFeesOfTx(app_tx.hash);
+
+    const amountIn = await router.getAmountsIn(amountOut, [token0.address, weth.address]);
+    const swap_tx = await tempRouter.swapTokensForExactETH(
+      amountOut,
+      amountIn[0],
+      [token0.address, weth.address],
+      signer.address,
+      deadline,
+    );
+
+    const swap_fees = await calcGasFeesOfTx(swap_tx.hash);
+    return swap_fees.add(app_fees);
 }

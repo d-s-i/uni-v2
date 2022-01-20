@@ -1,4 +1,5 @@
 import { BigNumber } from "ethers";
+import { parseEther, formatEther } from "ethers/lib/utils";
 
 export class UniswapV2PairClass {
     private _token0Reserve: BigNumber;
@@ -23,6 +24,11 @@ export class UniswapV2PairClass {
         this._wethAddress = wethAddress;
     }
 
+    quote(amountA: BigNumber, reserveA: BigNumber, reserveB: BigNumber) {
+        this._checkLiquidity("quote");
+        return amountA.mul(reserveB).div(reserveA);
+    }
+    
     sortTokens(tokenA: string, tokenB: string) {
         const tokenANum = BigNumber.from(tokenA);
         const tokenBNum = BigNumber.from(tokenB);
@@ -30,9 +36,9 @@ export class UniswapV2PairClass {
         return tokenANum.lt(tokenBNum) ? [tokenA, tokenB] : [tokenB, tokenA];
     }
 
-    quote(amountA: BigNumber, reserveA: BigNumber, reserveB: BigNumber) {
-        this._checkLiquidity("quote");
-        return amountA.mul(reserveB).div(reserveA);
+    getSortedReserves(tokenA: string, tokenB: string) {
+        const [_token0] = this.sortTokens(tokenA, tokenB);
+        return tokenA === _token0 ? [this._token0Reserve, this._token1Reserve] : [this._token1Reserve, this._token0Reserve];
     }
 
     simulateSwapExactETHForTokens(
@@ -69,6 +75,7 @@ export class UniswapV2PairClass {
             throw new Error("UniswapV2PairClass::simulateSwapExactTokensForEth - Swapping Tokens For Eth But End Address Isn't Weth");
         }
         const amounts = this.getAmountsOut(amountIn, path);
+    
         if(amounts[amounts.length - 1].lt(amountOutMin)) {
             throw new Error("UniswapV2PairClass::simulateSwapExactTokensForEth - amountOut lower than amountOutMin");
         }
@@ -76,7 +83,7 @@ export class UniswapV2PairClass {
         return this.swap(amounts, path);
     }
 
-    simulateSwapTokensForExactEth(
+    simulateSwapTokensForExactETH(
         amountOut: BigNumber,
         path: string[]
     ) {
@@ -125,12 +132,7 @@ export class UniswapV2PairClass {
 
         const numerator = reserveIn.mul(amountOut).mul(1000);
         const denominator = reserveOut.sub(amountOut).mul(997);
-        return numerator.div(denominator);
-    }
-
-    getSortedReserves(tokenA: string, tokenB: string) {
-        const [_token0] = this.sortTokens(tokenA, tokenB);
-        return tokenA === _token0 ? [this._token0Reserve, this._token1Reserve] : [this._token1Reserve, this._token0Reserve];
+        return (numerator.div(denominator)).add(1);
     }
 
     swap(amounts: BigNumber[], path: string[]) {
@@ -151,7 +153,6 @@ export class UniswapV2PairClass {
         if(_amount0Out.gt(this._token0Reserve) || _amount1Out.gt(this._token1Reserve)) {
             throw new Error("UniswapV2PairClass::_swap - Insufficient liquidity");
         }
-
         
         if(_amount0Out.gt(0)) {
             this._token0Reserve = this._token0Reserve.sub(_amount0Out);
@@ -187,7 +188,7 @@ export class UniswapV2PairClass {
 
     _checkExitIsWeth(path: string[]) {
         if(path[path.length - 1] !== this.wethAddress) {
-            throw new Error(`UniswapV2PairClass::simulateSwapTokensForExactETH - path[0] Should Be Weth Address`);
+            throw new Error(`UniswapV2PairClass::simulateSwapTokensForExactETH - path[1] Should Be Weth Address`);
         }
     }
 

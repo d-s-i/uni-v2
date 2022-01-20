@@ -10,9 +10,9 @@ import {
   swapExactEthForTokensFromContract, 
   deployNewPairClass, 
   swapExactTokensForEthFromContract,
-  resetEthBalances
+  resetEthBalances,
+  swapTokensForExactETHFroMContract
 } from "./helpers.test";
-import { UniswapV2PairClass } from "./UniV2PairClass.test";
 
 export let deployer: SignerWithAddress;
 let recolter: SignerWithAddress;
@@ -38,7 +38,6 @@ beforeEach(async function () {
   const WETH = await ethers.getContractFactory("WETH9");
   weth = await WETH.deploy();
 
-  // await weth.deposit({ value: parseEther("100") });
   const Factory = await ethers.getContractFactory("UniswapV2Factory");
   factory = await Factory.deploy(recolter.address);
 
@@ -47,7 +46,6 @@ beforeEach(async function () {
 
   await factory.createPair(token0.address, weth.address);
   const poolAddress = await factory.getPair(token0.address, weth.address);
-  // console.log(poolAddress);
 
   await token0.approve(router.address, BigInt(2**255));
   await weth.approve(router.address, BigInt(2**255));
@@ -299,50 +297,62 @@ describe("Swap Eth to Tokens via Router", function() {
       const finBalance = await token0.balanceOf(swapper.address);
       const reserves = await uniPair.getReserves();
 
-      assert.ok(
-        uniPairClass.reserves[0].eq(reserves[0]) || 
-        uniPairClass.reserves[0].add(1).eq(reserves[0]) || 
-        uniPairClass.reserves[0].sub(1).eq(reserves[0])
-      );
-      assert.ok(
-        uniPairClass.reserves[1].eq(reserves[1]) || 
-        uniPairClass.reserves[1].add(1).eq(reserves[1]) || 
-        uniPairClass.reserves[1].sub(1).eq(reserves[1])
-      );
+      assert.ok(uniPairClass.reserves[0].eq(reserves[0]));
+      assert.ok(uniPairClass.reserves[1].eq(reserves[1]));
       assert.ok(swappedAmount.eq(finBalance.sub(initBalance)));
   });
 
   it("swapTokensForExactETH from Contract", async function() {
-    router = router.connect(swapper);
-    const deadline = await getDeadline(deployer.provider!);
 
     const initBalance = await swapper.getBalance();
 
-    token0 = token0.connect(deployer);
-    await token0.transfer(swapper.address, parseEther("100000"));
-    
-    token0 = token0.connect(swapper);
-    await token0.approve(router.address, BigInt(2**255));
+    const amountOut = parseEther("0.01");
+
+    const fees_spent = await swapTokensForExactETHFroMContract(swapper, amountOut);
+      
+    const finBalance = await swapper.getBalance();
+    const reserves = await uniPair.getReserves();
+
+    // console.log("Swapped amount: ", formatEther(finBalance.sub(initBalance).add(fees_spent)));
+    // console.log("token0 reserves from contract: ", formatEther(reserves[0]));
+    // console.log("token1 reserves from contract: ", formatEther(reserves[1]));
+
+    assert.ok(finBalance.sub(initBalance).add(fees_spent).eq(amountOut));
+  });
+
+  it("swapTokensForExactETH from Class", async function() {
+    const uniPairClass = await deployNewPairClass();
 
     const amountOut = parseEther("0.01");
-    const amountIn = await router.getAmountsIn(amountOut, [token0.address, weth.address]);
-    await router.swapTokensForExactETH(
+    const swappedAmount = uniPairClass.simulateSwapTokensForExactETH(
       amountOut,
-      amountIn[0],
-      [token0.address, weth.address],
-      swapper.address,
-      deadline,
-      );
-      
-      const finBalance = await swapper.getBalance();
-      const reserves = await uniPair.getReserves();
+      [token0.address, weth.address]
+    );
 
-      console.log("Swapped amount: ", finBalance.sub(initBalance));
+    // console.log("Swapped Amount: ", formatEther(swappedAmount!), "(should be ", formatEther(amountOut), ")");
+    // console.log("token0 reserves from class: ", formatEther(uniPairClass.reserves[0]));
+    // console.log("token1 reserves from class: ", formatEther(uniPairClass.reserves[1]));
+    
+  });
 
-      console.log("token0 reserves from contract: ", formatEther(reserves[0]));
-      console.log("token1 reserves from contract: ", formatEther(reserves[1]));
+  it("Swap Same Amount With swapTokensForExactETH from Contract and Class", async function() {
+    const amountOut = parseEther("0.01");
+    const uniPairClass = await deployNewPairClass();
 
-      assert.ok(initBalance.lt(finBalance));
+    const initBalance = await swapper.getBalance();
+    const fees_spent = await swapTokensForExactETHFroMContract(swapper, amountOut);
+    const finBalance = await swapper.getBalance();
+    const reserves = await uniPair.getReserves();
+
+    const swappedAmount = uniPairClass.simulateSwapTokensForExactETH(
+      amountOut,
+      [token0.address, weth.address]
+    );
+
+    assert.ok(uniPairClass.reserves[0].eq(reserves[0]));
+    assert.ok(uniPairClass.reserves[1].eq(reserves[1]));
+    assert.ok(swappedAmount.eq(finBalance.sub(initBalance).add(fees_spent)));
+    
   });
   
 });
