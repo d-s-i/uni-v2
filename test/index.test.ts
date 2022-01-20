@@ -11,7 +11,8 @@ import {
   deployNewPairClass, 
   swapExactTokensForEthFromContract,
   resetEthBalances,
-  swapTokensForExactETHFroMContract
+  swapTokensForExactETHFromContract,
+  swapETHForExactTokensFromContract     
 } from "./helpers.test";
 
 export let deployer: SignerWithAddress;
@@ -308,7 +309,7 @@ describe("Swap Eth to Tokens via Router", function() {
 
     const amountOut = parseEther("0.01");
 
-    const fees_spent = await swapTokensForExactETHFroMContract(swapper, amountOut);
+    const fees_spent = await swapTokensForExactETHFromContract(swapper, amountOut);
       
     const finBalance = await swapper.getBalance();
     const reserves = await uniPair.getReserves();
@@ -340,7 +341,7 @@ describe("Swap Eth to Tokens via Router", function() {
     const uniPairClass = await deployNewPairClass();
 
     const initBalance = await swapper.getBalance();
-    const fees_spent = await swapTokensForExactETHFroMContract(swapper, amountOut);
+    const fees_spent = await swapTokensForExactETHFromContract(swapper, amountOut);
     const finBalance = await swapper.getBalance();
     const reserves = await uniPair.getReserves();
 
@@ -353,6 +354,114 @@ describe("Swap Eth to Tokens via Router", function() {
     assert.ok(uniPairClass.reserves[1].eq(reserves[1]));
     assert.ok(swappedAmount.eq(finBalance.sub(initBalance).add(fees_spent)));
     
+  });
+
+  it("Swap same amount after multiple swap with swapExactEthForTokens", async function() {
+
+    const uniPairClass = await deployNewPairClass();
+    
+    const initialBalance = await token0.balanceOf(swapper.address);
+    const swap0_fees = await swapExactEthForTokensFromContract(ETH_SWAP_AMOUNT, token0.address, swapper);
+    const swap1_fees = await swapExactEthForTokensFromContract(ETH_SWAP_AMOUNT, token0.address, swapper);
+    const swap2_fees = await swapExactEthForTokensFromContract(ETH_SWAP_AMOUNT, token0.address, swapper);
+    const finalBalance = await token0.balanceOf(swapper.address);
+    const reserves = await uniPair.getReserves();
+
+    const totalContractSwap = finalBalance.sub(initialBalance).add(swap0_fees).add(swap1_fees).add(swap2_fees);
+    
+    const swappedAmount0 = uniPairClass.simulateSwapExactETHForTokens(ETH_SWAP_AMOUNT, BigNumber.from(1), [weth.address, token0.address]);
+    const swappedAmount1 = uniPairClass.simulateSwapExactETHForTokens(ETH_SWAP_AMOUNT, BigNumber.from(1), [weth.address, token0.address]);
+    const swappedAmount2 = uniPairClass.simulateSwapExactETHForTokens(ETH_SWAP_AMOUNT, BigNumber.from(1), [weth.address, token0.address]);
+
+    const totalClassSwap = swappedAmount0.add(swappedAmount1).add(swappedAmount2);
+
+    assert.ok(uniPairClass.reserves[0].eq(reserves[0]));
+    assert.ok(uniPairClass.reserves[1].eq(reserves[1]));
+    assert.strictEqual(parseFloat(formatEther(totalClassSwap)).toFixed(2), parseFloat(formatEther(totalContractSwap)).toFixed(2));
+    
+  });
+
+  it("Swap same amount after multiple swap with swapExactTokensForEth", async function() {
+    const initialBalance = await swapper.getBalance();
+    const uniPairClass = await deployNewPairClass();
+
+    const swap0_fees = await swapExactTokensForEthFromContract(swapper, TOKEN_SWAP_AMOUNT);
+    const swap1_fees = await swapExactTokensForEthFromContract(swapper, TOKEN_SWAP_AMOUNT);
+    const swap2_fees = await swapExactTokensForEthFromContract(swapper, TOKEN_SWAP_AMOUNT);
+    const finalBalance = await swapper.getBalance();
+ 
+    const reservesAfterContractSwap = await uniPair.getReserves();
+    const totalContractSwap = finalBalance.sub(initialBalance).add(swap0_fees).add(swap1_fees).add(swap2_fees);
+    
+    const swappedAmount0 = uniPairClass.simulateSwapExactTokensForEth(
+      TOKEN_SWAP_AMOUNT, 
+      BigNumber.from(1), 
+      [token0.address, weth.address]
+    );
+    const swappedAmount1 = uniPairClass.simulateSwapExactTokensForEth(
+      TOKEN_SWAP_AMOUNT, 
+      BigNumber.from(1), 
+      [token0.address, weth.address]
+    );
+    const swappedAmount2 = uniPairClass.simulateSwapExactTokensForEth(
+      TOKEN_SWAP_AMOUNT, 
+      BigNumber.from(1), 
+      [token0.address, weth.address]
+    );
+    const totalClassSwap = swappedAmount0.add(swappedAmount1).add(swappedAmount2);
+
+    assert.ok(totalContractSwap.eq(totalClassSwap));
+    assert.ok(reservesAfterContractSwap[1].eq(uniPairClass.token1Reserves));
+    assert.ok(reservesAfterContractSwap[0].eq(uniPairClass.token0Reserve));
+    assert.ok(reservesAfterContractSwap[0].eq(uniPairClass.reserves[0]));
+    assert.ok(reservesAfterContractSwap[1].eq(uniPairClass.reserves[1]));
+  });
+
+  it("Swap same amount after multiple swap with swapETHForExactTokens", async function() {
+    const uniPairClass = await deployNewPairClass();
+
+    const initialBalance = await token0.balanceOf(swapper.address);
+    const swap0_fees = await swapETHForExactTokensFromContract(
+      TOKEN_SWAP_AMOUNT,
+      parseEther("1"),
+      swapper
+    );
+    const swap1_fees = await swapETHForExactTokensFromContract(
+      TOKEN_SWAP_AMOUNT,
+      parseEther("1"),
+      swapper
+    );
+    const swap2_fees = await swapETHForExactTokensFromContract(
+      TOKEN_SWAP_AMOUNT,
+      parseEther("1"),
+      swapper
+    );
+    const finalBalance = await token0.balanceOf(swapper.address);
+
+
+    const swappedAmount0 = uniPairClass.simulateSwapETHForExactTokens(
+      TOKEN_SWAP_AMOUNT,
+      [weth.address, token0.address]
+    );
+    const swappedAmount1 = uniPairClass.simulateSwapETHForExactTokens(
+      TOKEN_SWAP_AMOUNT,
+      [weth.address, token0.address]
+    );
+    const swappedAmount2 = uniPairClass.simulateSwapETHForExactTokens(
+      TOKEN_SWAP_AMOUNT,
+      [weth.address, token0.address]
+    );
+
+    const totalContractSwap = finalBalance.sub(initialBalance).add(swap0_fees).add(swap1_fees).add(swap2_fees);
+    const totalClassSwap = swappedAmount0.add(swappedAmount1).add(swappedAmount2);
+    
+    const reservesAfterContractSwap = await uniPair.getReserves();
+
+    assert.strictEqual(parseFloat(formatEther(totalContractSwap)).toFixed(2), parseFloat(formatEther(totalClassSwap)).toFixed(2));
+    assert.ok(reservesAfterContractSwap[1].eq(uniPairClass.token1Reserves));
+    assert.ok(reservesAfterContractSwap[0].eq(uniPairClass.token0Reserve));
+    assert.ok(reservesAfterContractSwap[0].eq(uniPairClass.reserves[0]));
+    assert.ok(reservesAfterContractSwap[1].eq(uniPairClass.reserves[1]));
   });
   
 });
