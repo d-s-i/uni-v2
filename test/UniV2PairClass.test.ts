@@ -1,4 +1,5 @@
 import { BigNumber } from "ethers";
+import { formatEther } from "ethers/lib/utils";
 
 export class UniswapV2PairClass {
     private _token0Reserve: BigNumber;
@@ -38,6 +39,18 @@ export class UniswapV2PairClass {
     getSortedReserves(tokenA: string, tokenB: string) {
         const [_token0] = this.sortTokens(tokenA, tokenB);
         return tokenA === _token0 ? [this._token0Reserve, this._token1Reserve] : [this._token1Reserve, this._token0Reserve];
+    }
+
+    getSlippage(amountIn: BigNumber, path: string[]) {
+        this._checkEntryIsWeth(path);
+        const reserves = this.getSortedReserves(path[0], path[1]);
+        const price = this.quote(amountIn, reserves[0], reserves[1]);
+        const amounts = this.getAmountsOut(amountIn, path);
+
+        // const slippage1 = price.mul(1000).div(amounts[1]).sub(1000).toNumber();
+        const slippage = amounts[1].mul(1000).div(price).toNumber();
+
+        return slippage / 1000;
     }
 
     simulateSwapExactETHForTokens(

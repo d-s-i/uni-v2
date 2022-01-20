@@ -1,5 +1,5 @@
 import hre from "hardhat";
-import { BigNumber, ethers } from "ethers";
+import { BigNumber, ethers, Signer } from "ethers";
 import { parseEther, hexValue, formatEther } from "ethers/lib/utils";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { Provider } from "@ethersproject/abstract-provider";
@@ -138,4 +138,59 @@ export const swapETHForExactTokensFromContract = async function(
         { value: amountIn }
     );
     return calcGasFeesOfTx(swap_tx.hash);
+}
+
+export const simulateFrontrunWithMaxSlippage = async function(
+    pairContract: { contractToken0Reserves: BigNumber, contractToken1Rerserves: BigNumber },
+    frontrun: { initialSwapAmount: BigNumber, signer: SignerWithAddress },
+    userSwap: { swapAmount: BigNumber, amountOutMin: BigNumber }
+) {
+    const uniPairClass = new UniswapV2PairClass(
+        [weth.address, token0.address], 
+        weth.address, 
+        pairContract.contractToken0Reserves, 
+        pairContract.contractToken1Rerserves
+    );
+
+    const frontrunInSwapAmounts = uniPairClass.simulateSwapExactETHForTokens(
+        frontrun.initialSwapAmount,
+        BigNumber.from("1"),
+        [weth.address, token0.address]
+    );
+
+    const deadline = await getDeadline(deployer.provider!);
+    const swapInGas = await router.estimateGas.swapExactETHForTokens(
+        BigNumber.from("1"),
+        [weth.address, token0.address],
+        frontrun.signer.address,
+        deadline,
+        { value: frontrun.initialSwapAmount }
+    );
+
+    const userSwapAmounts = uniPairClass.simulateSwapExactETHForTokens(
+        userSwap.swapAmount,
+        userSwap.amountOutMin,
+        [weth.address, token0.address]
+    );
+
+    const frontrunOutSwapAmounts = uniPairClass.simulateSwapExactTokensForEth(
+        frontrunInSwapAmounts[1],
+        BigNumber.from("1"),
+        [token0.address, weth.address]
+    );
+    const swapOutGas = await router.estimateGas.swapExactTokensForETH(
+        frontrunInSwapAmounts[1],
+        BigNumber.from("1"),
+        [token0.address, weth.address],
+        frontrun.signer.address,
+        deadline
+    );
+
+    const feeData = await deployer.provider!.getFeeData();
+
+    const feePaid = swapInGas.add(swapOutGas).mul(feeData.gasPrice!);
+    const profits = frontrunOutSwapAmounts[1].sub(frontrun.initialSwapAmount).sub(feePaid);
+    
+    return profits;
+    
 }
