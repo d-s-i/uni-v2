@@ -1,5 +1,4 @@
 import { BigNumber } from "ethers";
-import { parseEther, formatEther } from "ethers/lib/utils";
 
 export class UniswapV2PairClass {
     private _token0Reserve: BigNumber;
@@ -28,7 +27,7 @@ export class UniswapV2PairClass {
         this._checkLiquidity("quote");
         return amountA.mul(reserveB).div(reserveA);
     }
-    
+
     sortTokens(tokenA: string, tokenB: string) {
         const tokenANum = BigNumber.from(tokenA);
         const tokenBNum = BigNumber.from(tokenB);
@@ -53,7 +52,8 @@ export class UniswapV2PairClass {
             throw new Error("UniswapV2PairClass::simulateSwapExactETHForTokens - AmountOut too low");
         }
         this._depositWethIntoReserves(amountIn);
-        return this.swap(amounts, path);
+        this.swap(amounts, path);
+        return amounts;
     }
 
     simulateSwapETHForExactTokens(
@@ -63,7 +63,8 @@ export class UniswapV2PairClass {
         this._checkEntryIsWeth(path);
         const amounts = this.getAmountsIn(amountOut, path);
         this._depositWethIntoReserves(amounts[0]);
-        return this.swap(amounts, path);
+        this.swap(amounts, path);
+        return amounts;
     }
 
     simulateSwapExactTokensForEth(
@@ -80,7 +81,8 @@ export class UniswapV2PairClass {
             throw new Error("UniswapV2PairClass::simulateSwapExactTokensForEth - amountOut lower than amountOutMin");
         }
         this._depositTokensIntoReserves(amountIn);
-        return this.swap(amounts, path);
+        this.swap(amounts, path);
+        return amounts;
     }
 
     simulateSwapTokensForExactETH(
@@ -90,11 +92,12 @@ export class UniswapV2PairClass {
         this._checkExitIsWeth(path);
         const amounts = this.getAmountsIn(amountOut, path);
         this._depositTokensIntoReserves(amounts[0]);
-        return this.swap(amounts, path);
+        this.swap(amounts, path);
+        return amounts;
     }
 
     getAmountsOut(amountIn: BigNumber, path: string[]) {
-        this._checkPathLength(path, "getAmountsOut");
+        this._checkPathLengthIsAtLeast2(path, "getAmountsOut");
         let amounts: BigNumber[] = [];
         amounts[0] = amountIn;
         const [reserveIn, reserveOut] = this.getSortedReserves(path[0], path[1]);
@@ -107,7 +110,7 @@ export class UniswapV2PairClass {
         amountOut: BigNumber,
         path: string[]
     ) {
-        this._checkPathLength(path, "getAmountsIn");
+        this._checkPathLengthIsAtLeast2(path, "getAmountsIn");
         let amounts: BigNumber[] = [];
         amounts[1] = amountOut;
         const [reserveIn, reserveOut] = this.getSortedReserves(path[0], path[1]);
@@ -198,7 +201,7 @@ export class UniswapV2PairClass {
         }
     }
 
-    _checkPathLength(path: string[], fnName: string) {
+    _checkPathLengthIsAtLeast2(path: string[], fnName: string) {
         if(path.length < 2) {
             throw new Error(`UniswapV2PairClass::${fnName} - Invalid Path Length`);
         }
