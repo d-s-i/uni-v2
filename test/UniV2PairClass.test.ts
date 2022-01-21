@@ -2,8 +2,8 @@ import { BigNumber } from "ethers";
 import { formatEther } from "ethers/lib/utils";
 
 export class UniswapV2PairClass {
-    private _token0Reserve: BigNumber;
-    private _token1Reserve: BigNumber;
+    private _token0Reserves: BigNumber;
+    private _token1Reserves: BigNumber;
     private _token0: string;
     private _token1: string;
     private readonly _wethAddress: string;
@@ -18,8 +18,8 @@ export class UniswapV2PairClass {
 
         this._token0 = pair[0];
         this._token1 = pair[1];
-        this._token1Reserve = reserve1;
-        this._token0Reserve = reserve0;
+        this._token1Reserves = reserve1;
+        this._token0Reserves = reserve0;
 
         this._wethAddress = wethAddress;
     }
@@ -38,17 +38,46 @@ export class UniswapV2PairClass {
 
     getSortedReserves(tokenA: string, tokenB: string) {
         const [_token0] = this.sortTokens(tokenA, tokenB);
-        return tokenA === _token0 ? [this._token0Reserve, this._token1Reserve] : [this._token1Reserve, this._token0Reserve];
+        return tokenA === _token0 ? [this._token0Reserves, this._token1Reserves] : [this._token1Reserves, this._token0Reserves];
     }
 
-    getSlippage(amountIn: BigNumber, path: string[]) {
-        this._checkEntryIsWeth(path);
-        const reserves = this.getSortedReserves(path[0], path[1]);
-        const price = this.quote(amountIn, reserves[0], reserves[1]);
-        const amounts = this.getAmountsOut(amountIn, path);
+    getAmountsOut(amountIn: BigNumber, path: string[]) {
+        this._checkPathLengthIsAtLeast2(path, "getAmountsOut");
+        let amounts: BigNumber[] = [];
+        amounts[0] = amountIn;
+        const [reserveIn, reserveOut] = this.getSortedReserves(path[0], path[1]);
+        amounts[1] = this._getAmountOut(amountIn, reserveIn, reserveOut);
 
-        // const slippage1 = price.mul(1000).div(amounts[1]).sub(1000).toNumber();
-        const slippage = amounts[1].mul(1000).div(price).toNumber();
+        return amounts;
+    }
+
+    getAmountsIn(
+        amountOut: BigNumber,
+        path: string[]
+    ) {
+        this._checkPathLengthIsAtLeast2(path, "getAmountsIn");
+        let amounts: BigNumber[] = [];
+        amounts[1] = amountOut;
+        const [reserveIn, reserveOut] = this.getSortedReserves(path[0], path[1]);
+        amounts[0] = this._getAmountIn(amounts[1], reserveIn, reserveOut);
+
+        return amounts;
+    }
+
+    // getSlippageCreatedFromAmountIn(amountIn: BigNumber, path: string[]) {
+    //     const reserves = this.getSortedReserves(path[0], path[1]);
+    //     const price = this.quote(amountIn, reserves[0], reserves[1]);
+    //     const amounts = this.getAmountsOut(amountIn, path);
+
+    //     const slippage = amounts[1].mul(1000).div(price).toNumber();
+
+    //     return slippage / 1000;
+    // }
+
+    getSlippageCreatedFromSwapETHForExactTokens(amountIn: BigNumber,amountOut: BigNumber, path: string[]) {
+        const amounts = this.getAmountsIn(amountOut, path);
+
+        const slippage = amountIn.mul(1000).div(amounts[0]).toNumber();
 
         return slippage / 1000;
     }
@@ -109,29 +138,6 @@ export class UniswapV2PairClass {
         return amounts;
     }
 
-    getAmountsOut(amountIn: BigNumber, path: string[]) {
-        this._checkPathLengthIsAtLeast2(path, "getAmountsOut");
-        let amounts: BigNumber[] = [];
-        amounts[0] = amountIn;
-        const [reserveIn, reserveOut] = this.getSortedReserves(path[0], path[1]);
-        amounts[1] = this._getAmountOut(amountIn, reserveIn, reserveOut);
-
-        return amounts;
-    }
-
-    getAmountsIn(
-        amountOut: BigNumber,
-        path: string[]
-    ) {
-        this._checkPathLengthIsAtLeast2(path, "getAmountsIn");
-        let amounts: BigNumber[] = [];
-        amounts[1] = amountOut;
-        const [reserveIn, reserveOut] = this.getSortedReserves(path[0], path[1]);
-        amounts[0] = this._getAmountIn(amounts[1], reserveIn, reserveOut);
-
-        return amounts;
-    }
-
     _getAmountOut(amountIn: BigNumber, reserveIn: BigNumber, reserveOut: BigNumber) {
         this._checkAmountGreaterThanZero(amountIn, "_getAmountOut");
         this._checkLiquidity("_getAmountOut");
@@ -166,15 +172,15 @@ export class UniswapV2PairClass {
         if(!_amount0Out.gt(0) && !_amount1Out.gt(0)) {
             throw new Error("UniswapV2PairClass::_swap - Insufficient output amount");
         }
-        if(_amount0Out.gt(this._token0Reserve) || _amount1Out.gt(this._token1Reserve)) {
+        if(_amount0Out.gt(this._token0Reserves) || _amount1Out.gt(this._token1Reserves)) {
             throw new Error("UniswapV2PairClass::_swap - Insufficient liquidity");
         }
         
         if(_amount0Out.gt(0)) {
-            this._token0Reserve = this._token0Reserve.sub(_amount0Out);
+            this._token0Reserves = this._token0Reserves.sub(_amount0Out);
             return _amount0Out;
         } else {
-            this._token1Reserve = this._token1Reserve.sub(_amount1Out);
+            this._token1Reserves = this._token1Reserves.sub(_amount1Out);
             return _amount1Out;
         }
 
@@ -182,17 +188,17 @@ export class UniswapV2PairClass {
 
     _depositWethIntoReserves(amountIn: BigNumber) {
         if(this._token0 === this.wethAddress) {
-            this._token0Reserve = this._token0Reserve.add(amountIn);
+            this._token0Reserves = this._token0Reserves.add(amountIn);
         } else {
-            this._token1Reserve = this._token1Reserve.add(amountIn);
+            this._token1Reserves = this._token1Reserves.add(amountIn);
         }
     }
 
     _depositTokensIntoReserves(amountIn: BigNumber) {
         if(this._token0 !== this.wethAddress) {
-            this._token0Reserve = this._token0Reserve.add(amountIn);
+            this._token0Reserves = this._token0Reserves.add(amountIn);
         } else {
-            this._token1Reserve = this._token1Reserve.add(amountIn);
+            this._token1Reserves = this._token1Reserves.add(amountIn);
         }
     }
 
@@ -221,21 +227,21 @@ export class UniswapV2PairClass {
     }
 
     _checkLiquidity(fnName: string) {
-        if(this._token0Reserve.lte(0) || this._token1Reserve.lte(0)) {
+        if(this._token0Reserves.lte(0) || this._token1Reserves.lte(0)) {
             throw new Error(`UniswapV2PairClass::${fnName} - Not Enough Liquidity`);
         }
     }
 
-    get token0Reserve() {
-        return this._token0Reserve;
+    get token0Reserves() {
+        return this._token0Reserves;
     }
 
     get token1Reserves() {
-        return this._token1Reserve;
+        return this._token1Reserves;
     }
 
     get reserves() {
-        return [this._token0Reserve, this._token1Reserve];
+        return [this._token0Reserves, this._token1Reserves];
     }
 
     get wethAddress() {

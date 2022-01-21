@@ -1,7 +1,7 @@
 import { ethers } from "hardhat";
 import { parseEther, formatEther } from "ethers/lib/utils";
 import assert from "assert";
-import { BigNumber, Contract } from "ethers";
+import { BigNumber, Contract, Signer } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 import { assertAddressExist } from "./assertions.test";
@@ -19,6 +19,7 @@ import {
 export let deployer: SignerWithAddress;
 let recolter: SignerWithAddress;
 let swapper: SignerWithAddress;
+let frontrunner: SignerWithAddress;
 
 export let token0: Contract;
 export let weth: Contract;
@@ -26,13 +27,13 @@ let factory: Contract;
 export let router: Contract;
 export let uniPair: Contract;
 
-const token0AmountAddedToLiquidity = parseEther("1000000000");
+const token0AmountAddedToLiquidity = parseEther("1000");
 const wethAmounAddedToLiquidity = parseEther("1000");
 
 beforeEach(async function () {
 
   
-  [deployer, recolter, swapper] = await ethers.getSigners();
+  [deployer, recolter, swapper, frontrunner] = await ethers.getSigners();
   await resetEthBalances([deployer.address, recolter.address, swapper.address]);
   
   const ERC20 = await ethers.getContractFactory("ERC20");
@@ -498,10 +499,218 @@ describe("Swap Eth To Tokens Via Router", function() {
       userSwapArgs
     );
 
-    console.log(uniPairClass.getSlippage(parseEther("100"), [weth.address, token0.address]));
+    // console.log(uniPairClass.getSlippageCreated(parseEther("100"), [weth.address, token0.address]));
 
-    console.log(`Frontrun profits: ${formatEther(profits)}`);
+    // console.log(`Frontrun profits: ${formatEther(profits)}`);
+
+    // console.log("In: 1 eth, out: 100 tokens");
+    // uniPairClass.getMaxSlippage(parseEther("1"), parseEther("100"), [weth.address, token0.address]);
+    // console.log("In: 1 eth, out: 1000 tokens");
+    // uniPairClass.getMaxSlippage(parseEther("1"), parseEther("1000"), [weth.address, token0.address]);
+
+    assert.ok(profits.gt(0));
+
+    const deadline = await getDeadline(deployer.provider!);
+    // swapExactETHForTokens(
+    //   uint amountOutMin, 
+    //   address[] calldata path, 
+    //   address to, 
+    //   uint deadline
+    // )
+    // await uniPair.swapExactETHForTokens(
+    //   parseEther("100"),
+    //   [weth.address, token0.address],
+    //   swapper.address,
+    //   deadline,
+    //   { value: parseEther("1") }
+    // );
+
+    // console.log(
+    //   uniPairClass.getMaxAllowedSlippageExactETHForTokens(
+    //     parseEther("1"),
+    //     parseEther("0.8"),
+    //     [weth.address, token0.address]
+    //   )
+    // );
+
+    // swapETHForExactTokens(
+    //   uint amountOut, 
+    //   address[] calldata path, 
+    //   address to, 
+    //   uint deadline
+    // )
+    // await uniPair.swapETHForExactTokens(
+    //   parseEther("100"),
+    //   [weth.address, token0.address],
+    //   swapper.address,
+    //   deadline,
+    //   { value: parseEther("1") }
+    // );
+  
+    // console.log(
+    //   uniPairClass.getMaxAllowedSlippageETHForExactTokens(
+    //     parseEther("1"),
+    //     parseEther("0.8"),
+    //     [weth.address, token0.address]
+    //   )
+    // );
+
+    // const frontrunAmountOut = uniPairClass.getAmountOutForETHForExactTokens(
+    //   { 
+    //     amountIn: parseEther("10"),
+    //     amountOut: parseEther("8"),
+    //     path: [weth.address, token0.address] 
+    //   }
+    // );
     
+    // console.log(formatEther(frontrunAmountOut));
+    
+  });
+
+  // it("Quotes From Contract And Class Are Equals", async function() {
+  //   const uniPairClass = await deployNewPairClass();
+
+  //   const amountA = parseEther("1");
+  //   const contractReserves = await uniPair.getReserves();
+  //   const uniPairClassQuote = uniPairClass.quote(amountA, uniPairClass.token0Reserves, uniPairClass.token1Reserves);
+  //   const uniPairQuote = await router.quote(amountA, contractReserves[0], contractReserves[1])
+
+  //   assert.ok(uniPairClassQuote.eq(uniPairQuote));
+  // });
+
+  // it("getAmountsIn From Contract And Class Are Equals", async function() {
+  //   const uniPairClass = await deployNewPairClass();
+
+  //   const contractReserves = await uniPair.getReserves();
+
+  //   const amountOut = parseEther("1");
+  //   const amountInClass = uniPairClass.getAmountsIn(amountOut, [weth.address, token0.address]);
+  //   const amountInContract = await router.getAmountIn(amountOut, contractReserves[0], contractReserves[1]);
+
+  //   assert.ok(amountInClass[0].eq(amountInContract));
+  // });
+
+  // it("getAmountsOut From Contract And Class Are Equals", async function() {
+  //   const uniPairClass = await deployNewPairClass();
+
+  //   const contractReserves = await uniPair.getReserves();
+
+  //   const amountIn = parseEther("1");
+  //   const amountOutClass = uniPairClass.getAmountsOut(amountIn, [weth.address, token0.address]);
+  //   const amountOutContract = await router.getAmountOut(amountIn, contractReserves[0], contractReserves[1]);
+    
+  //   assert.ok(amountOutClass[1].eq(amountOutContract));
+  // });
+
+  it("Frontrun" , async function() {
+
+    const deadline = await getDeadline(deployer.provider!);
+
+    const uniPairClass = await deployNewPairClass();
+
+    const userPosition =       { 
+      amountIn: parseEther("1"),
+      amountOut: parseEther("0.8"),
+      path: [weth.address, token0.address] 
+    };
+    
+    const slippage = uniPairClass.getSlippageCreatedFromSwapETHForExactTokens(userPosition.amountIn, userPosition.amountOut, userPosition.path);
+    console.log(`slippage: ${((slippage * 100) - 100).toFixed(2)}%`);
+    const [currReservesIn] = uniPairClass.getSortedReserves(userPosition.path[0], userPosition.path[1]);
+    const frontrunAmountIn = (currReservesIn.mul(slippage * 1000).div(1000)).sub(currReservesIn);
+    // const frontrunAmountOut = uniPairClass.geFrontrunParamAmountOutForETHForExactTokens(
+    //   userPosition.amountIn.mul(slippage),
+    //   userPosition.amountOut,
+    //   userPosition.path
+    // );
+    // const [amountIn] = uniPairClass.getAmountsIn(frontrunAmountOut, userPosition.path);
+    // console.log("AmountOut should be :", formatEther(frontrunAmountOut));
+    // console.log("AmountIn should be :", formatEther(amountIn));
+
+    // const frontrunAmountIn = userPosition.amountIn.mul(slippage * 1000).div(1000);
+    const [, frontrunAmountOutMin] = uniPairClass.getAmountsOut(frontrunAmountIn, userPosition.path);
+    console.log("Frontrun amountIn: ", formatEther(frontrunAmountIn));
+
+    router = router.connect(frontrunner);
+
+    const reserves1 = await uniPair.getReserves();
+    const quote1 = await router.quote(parseEther("1"), reserves1[0], reserves1[1]);
+
+    await router.swapExactETHForTokens(
+      frontrunAmountOutMin.mul(101).div(100),
+      userPosition.path,
+      frontrunner.address,
+      deadline,
+      { value: frontrunAmountIn.mul(2) }
+    );
+    
+    const reserves2 = await uniPair.getReserves();
+    const quote2 = await router.quote(parseEther("1"), reserves2[0], reserves2[1]);
+
+    console.log("Quote 1 : ", formatEther(quote1), "Quote 2 : ", formatEther(quote2));
+
+    await router.swapETHForExactTokens(
+      userPosition.amountOut,
+      userPosition.path,
+      swapper.address,
+      deadline,
+      { value: userPosition.amountIn }
+    );
+
+    // try {
+    //   await router.swapExactETHForTokens(
+    //     frontrunAmountOutMin.mul(101).div(100),
+    //     userPosition.path,
+    //     frontrunner.address,
+    //     deadline,
+    //     { value: frontrunAmountIn }
+    //   );
+
+    //   await router.swapETHForExactTokens(
+    //     userPosition.amountOut,
+    //     userPosition.path,
+    //     swapper.address,
+    //     deadline,
+    //     { value: userPosition.amountIn }
+    //   );
+    //   assert.ok(false, "Frontrunning shouldn't have passed with a highed amountOut");
+    // } catch(error) {
+    //   assert.ok(true);
+    // }
+
+    // try {
+    //   await router.swapExactETHForTokens(
+    //     frontrunAmountOutMin,
+    //     userPosition.path,
+    //     frontrunner.address,
+    //     deadline,
+    //     { value: frontrunAmountIn }
+    //   );
+
+    //   await router.swapETHForExactTokens(
+    //     userPosition.amountOut,
+    //     userPosition.path,
+    //     swapper.address,
+    //     deadline,
+    //     { value: userPosition.amountIn }
+    //   );
+    //   assert.ok(true);
+    // } catch(error) {
+    //   assert.ok(false, "Error when swapping with the exact amountOut to exploit the user's slippage");
+    // }
+      
+    // const initialUserBalance = await token0.balanceOf(swapper.address);
+    // router = router.connect(swapper);
+    
+    // await router.swapETHForExactTokens(
+    //   userPosition.amountOut,
+    //   userPosition.path,
+    //   swapper.address,
+    //   deadline,
+    //   { value: userPosition.amountIn }
+    // );
+    // const finalUserBalance = await token0.balanceOf(swapper.address);
+
   });
   
 });
