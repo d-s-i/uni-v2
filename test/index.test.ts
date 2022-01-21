@@ -13,7 +13,8 @@ import {
   resetEthBalances,
   swapTokensForExactETHFromContract,
   swapETHForExactTokensFromContract ,
-  simulateFrontrunWithMaxSlippage    
+  simulateFrontrunWithMaxSlippage,
+  getAmountsRespectingSlippageFromSwapETHForExactTokens  
 } from "./helpers.test";
 
 export let deployer: SignerWithAddress;
@@ -30,8 +31,10 @@ export let uniPair: Contract;
 const token0AmountAddedToLiquidity = parseEther("1000");
 const wethAmounAddedToLiquidity = parseEther("1000");
 
-beforeEach(async function () {
+const assertDeployements = false;
+const assertSwapTests = true;
 
+beforeEach(async function () {
   
   [deployer, recolter, swapper, frontrunner] = await ethers.getSigners();
   await resetEthBalances([deployer.address, recolter.address, swapper.address]);
@@ -47,13 +50,14 @@ beforeEach(async function () {
   const Router = await ethers.getContractFactory("UniswapV2Router02");
   router = await Router.deploy(factory.address, weth.address, { gasLimit: BigNumber.from("8000000") });
 
-  await factory.createPair(token0.address, weth.address);
+  await factory.createPair(weth.address, token0.address);
   const poolAddress = await factory.getPair(token0.address, weth.address);
-
+  
   await token0.approve(router.address, BigInt(2**255));
   await weth.approve(router.address, BigInt(2**255));
-
+  
   const UniswapV2Pair = await ethers.getContractFactory("UniswapV2Pair");
+  // console.log(ethers.utils.keccak256(UniswapV2Pair.bytecode));
   uniPair = new ethers.Contract(poolAddress, UniswapV2Pair.interface, deployer);
 
   const deadline = await getDeadline(deployer.provider!);
@@ -72,7 +76,7 @@ beforeEach(async function () {
 
 });
 
-describe("Deployments", function () {
+assertDeployements && describe("Deployments", function () {
 
   it("Deployed The Tokens", async function() {
     assertAddressExist(token0.address);
@@ -100,7 +104,7 @@ describe("Deployments", function () {
   });
 });
 
-describe("Swap Eth To Tokens Via Router", function() {
+assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
 
   const ETH_SWAP_AMOUNT = parseEther("2");
   const TOKEN_SWAP_AMOUNT = parseEther("10000");
@@ -572,7 +576,7 @@ describe("Swap Eth To Tokens Via Router", function() {
 
   //   const amountA = parseEther("1");
   //   const contractReserves = await uniPair.getReserves();
-  //   const uniPairClassQuote = uniPairClass.quote(amountA, uniPairClass.token0Reserves, uniPairClass.token1Reserves);
+  //   const uniPairClassQuote = uniPairClass.quote(amountA, [uniPairClass.token0, uniPairClass.token1]);
   //   const uniPairQuote = await router.quote(amountA, contractReserves[0], contractReserves[1])
 
   //   assert.ok(uniPairClassQuote.eq(uniPairQuote));
@@ -613,103 +617,54 @@ describe("Swap Eth To Tokens Via Router", function() {
       amountOut: parseEther("0.8"),
       path: [weth.address, token0.address] 
     };
-    
-    const slippage = uniPairClass.getSlippageCreatedFromSwapETHForExactTokens(userPosition.amountIn, userPosition.amountOut, userPosition.path);
-    console.log(`slippage: ${((slippage * 100) - 100).toFixed(2)}%`);
-    const [currReservesIn] = uniPairClass.getSortedReserves(userPosition.path[0], userPosition.path[1]);
-    const frontrunAmountIn = (currReservesIn.mul(slippage * 1000).div(1000)).sub(currReservesIn);
-    // const frontrunAmountOut = uniPairClass.geFrontrunParamAmountOutForETHForExactTokens(
-    //   userPosition.amountIn.mul(slippage),
-    //   userPosition.amountOut,
-    //   userPosition.path
-    // );
-    // const [amountIn] = uniPairClass.getAmountsIn(frontrunAmountOut, userPosition.path);
-    // console.log("AmountOut should be :", formatEther(frontrunAmountOut));
-    // console.log("AmountIn should be :", formatEther(amountIn));
 
-    // const frontrunAmountIn = userPosition.amountIn.mul(slippage * 1000).div(1000);
+    const quote1 = uniPairClass.quote(parseEther("1"), userPosition.path);
+    const slippage = uniPairClass.getSlippageCreatedFromSwapETHForExactTokens(userPosition.amountIn, userPosition.amountOut, userPosition.path);
+    console.log("slippage", slippage);
+    // const [frontrunAmountIn, frontrunAmountOutMin] = await getAmountsRespectingSlippageFromSwapETHForExactTokens();
+    const classReserves = uniPairClass.getSortedReserves(userPosition.path[0], userPosition.path[1]);
+
+    const frontrunAmountIn = classReserves[0].mul(Math.round((slippage - 1) * 1000)).div(1000).div(2);
     const [, frontrunAmountOutMin] = uniPairClass.getAmountsOut(frontrunAmountIn, userPosition.path);
-    console.log("Frontrun amountIn: ", formatEther(frontrunAmountIn));
+    console.log("From second technic, amountIn is: ", formatEther(frontrunAmountIn));
 
     router = router.connect(frontrunner);
 
     const reserves1 = await uniPair.getReserves();
-    const quote1 = await router.quote(parseEther("1"), reserves1[0], reserves1[1]);
+    console.log("Initial reserves: ", formatEther(reserves1[0]), formatEther(reserves1[1]));
+    console.log("reserves1[0] / reserves1[1]", reserves1[0].mul(1000).div(reserves1[1]).toNumber() / 1000);
+        // console.log("reserves1[0] * reserves1[1]", formatEther(reserves1[0].mul(reserves1[1])));
 
     await router.swapExactETHForTokens(
-      frontrunAmountOutMin.mul(101).div(100),
+      frontrunAmountOutMin,
       userPosition.path,
       frontrunner.address,
       deadline,
-      { value: frontrunAmountIn.mul(2) }
-    );
-    
-    const reserves2 = await uniPair.getReserves();
-    const quote2 = await router.quote(parseEther("1"), reserves2[0], reserves2[1]);
-
-    console.log("Quote 1 : ", formatEther(quote1), "Quote 2 : ", formatEther(quote2));
-
-    await router.swapETHForExactTokens(
-      userPosition.amountOut,
-      userPosition.path,
-      swapper.address,
-      deadline,
-      { value: userPosition.amountIn }
+      { value: frontrunAmountIn }
     );
 
-    // try {
-    //   await router.swapExactETHForTokens(
-    //     frontrunAmountOutMin.mul(101).div(100),
-    //     userPosition.path,
-    //     frontrunner.address,
-    //     deadline,
-    //     { value: frontrunAmountIn }
-    //   );
-
-    //   await router.swapETHForExactTokens(
-    //     userPosition.amountOut,
-    //     userPosition.path,
-    //     swapper.address,
-    //     deadline,
-    //     { value: userPosition.amountIn }
-    //   );
-    //   assert.ok(false, "Frontrunning shouldn't have passed with a highed amountOut");
-    // } catch(error) {
-    //   assert.ok(true);
-    // }
-
-    // try {
-    //   await router.swapExactETHForTokens(
-    //     frontrunAmountOutMin,
-    //     userPosition.path,
-    //     frontrunner.address,
-    //     deadline,
-    //     { value: frontrunAmountIn }
-    //   );
-
-    //   await router.swapETHForExactTokens(
-    //     userPosition.amountOut,
-    //     userPosition.path,
-    //     swapper.address,
-    //     deadline,
-    //     { value: userPosition.amountIn }
-    //   );
-    //   assert.ok(true);
-    // } catch(error) {
-    //   assert.ok(false, "Error when swapping with the exact amountOut to exploit the user's slippage");
-    // }
-      
-    // const initialUserBalance = await token0.balanceOf(swapper.address);
     // router = router.connect(swapper);
-    
-    // await router.swapETHForExactTokens(
+    // await router.swapExactETHForTokens(
     //   userPosition.amountOut,
     //   userPosition.path,
-    //   swapper.address,
+    //   frontrunner.address,
     //   deadline,
     //   { value: userPosition.amountIn }
     // );
-    // const finalUserBalance = await token0.balanceOf(swapper.address);
+
+    const reserves2 = await uniPair.getReserves();
+    console.log("Final reserves: ", formatEther(reserves2[0]), formatEther(reserves2[1]));
+    console.log("reserves2[0] / reserves2[1]", reserves2[0].mul(1000000).div(reserves2[1]).toNumber() / 1000000);
+    // console.log("reserves2[0] * reserves2[1]", formatEther(reserves2[0].mul(reserves2[1])));
+
+    // const quote2 = await router.quote(parseEther("1"), reserves2[0], reserves2[1]);
+
+    // const slippageCreated = quote1.mul(1000).div(quote2).toNumber() / 1000;
+    // console.log("Quote 1 : ", formatEther(quote1), "Quote 2 : ", formatEther(quote2), "slippage created : ", slippageCreated);
+
+    // assert.strictEqual(slippageCreated, slippage);
+
+
 
   });
   

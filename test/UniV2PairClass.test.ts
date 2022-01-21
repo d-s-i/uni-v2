@@ -24,9 +24,10 @@ export class UniswapV2PairClass {
         this._wethAddress = wethAddress;
     }
 
-    quote(amountA: BigNumber, reserveA: BigNumber, reserveB: BigNumber) {
+    quote(amountA: BigNumber, path: string[]) {
         this._checkLiquidity("quote");
-        return amountA.mul(reserveB).div(reserveA);
+        const [reserveIn, reserveOut] = this.getSortedReserves(path[0], path[1]);
+        return amountA.mul(reserveOut).div(reserveIn);
     }
 
     sortTokens(tokenA: string, tokenB: string) {

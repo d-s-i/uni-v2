@@ -1,6 +1,6 @@
 import hre from "hardhat";
 import { BigNumber, ethers, Signer } from "ethers";
-import { parseEther, hexValue, formatEther } from "ethers/lib/utils";
+import { parseEther, hexValue, formatEther, parseUnits } from "ethers/lib/utils";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { Provider } from "@ethersproject/abstract-provider";
 
@@ -192,5 +192,55 @@ export const simulateFrontrunWithMaxSlippage = async function(
     const profits = frontrunOutSwapAmounts[1].sub(frontrun.initialSwapAmount).sub(feePaid);
     
     return profits;
+}
+
+export const getAmountsRespectingSlippageFromSwapETHForExactTokens = async function() {
+    const uniPairClass2 = await deployNewPairClass();
+
+    const userPosition =       { 
+        amountIn: parseEther("1"),
+        amountOut: parseEther("0.8"),
+        path: [weth.address, token0.address] 
+      };
+
+    const expectedSlippage = uniPairClass2.getSlippageCreatedFromSwapETHForExactTokens(userPosition.amountIn, userPosition.amountOut, userPosition.path);
+    const classReserves = uniPairClass2.getSortedReserves(userPosition.path[0], userPosition.path[1]);
+    let frontrunAmountIn = (classReserves[0].mul(expectedSlippage * 1000).div(1000)).sub(classReserves[0]);
+    let [, frontrunAmountOutMin] = uniPairClass2.getAmountsOut(frontrunAmountIn, userPosition.path);
+
+
+    const initialQuote = uniPairClass2.quote(frontrunAmountIn, userPosition.path);
+    uniPairClass2.simulateSwapExactETHForTokens(
+        frontrunAmountIn,
+        frontrunAmountOutMin,
+        userPosition.path
+    );
+    const finalQuote = uniPairClass2.quote(frontrunAmountIn, userPosition.path);
+
+    let createdSlippage = initialQuote.mul(1000).div(finalQuote).toNumber() / 1000;
+
+    let amountToSubstract = parseUnits("1", "18");
+
+    while(createdSlippage > expectedSlippage) {
+        const uniPairClass3 = await deployNewPairClass();
+        const classReserves = uniPairClass3.getSortedReserves(userPosition.path[0], userPosition.path[1]);
+        frontrunAmountIn = (classReserves[0].mul(expectedSlippage * 1000).div(1000)).sub(classReserves[0]).sub(amountToSubstract);
+        [, frontrunAmountOutMin] = uniPairClass3.getAmountsOut(frontrunAmountIn, userPosition.path);
     
+    
+        const initialQuote = uniPairClass3.quote(frontrunAmountIn, userPosition.path);
+        uniPairClass3.simulateSwapExactETHForTokens(
+            frontrunAmountIn,
+            frontrunAmountOutMin,
+            userPosition.path
+        );
+        const finalQuote = uniPairClass3.quote(frontrunAmountIn, userPosition.path);
+    
+        createdSlippage = initialQuote.mul(1000).div(finalQuote).toNumber() / 1000;
+        amountToSubstract = amountToSubstract.add(parseUnits("1", "18"));
+    }
+    console.log("Final amountIn: ", formatEther(frontrunAmountIn));
+    console.log("Final amountOutMin: ", formatEther(frontrunAmountOutMin));
+
+    return [frontrunAmountIn, frontrunAmountOutMin];
 }
