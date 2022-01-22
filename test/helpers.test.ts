@@ -195,6 +195,34 @@ export const simulateFrontrunWithMaxSlippage = async function(
     return profits;
 }
 
+export const getClassTokenReserve = function(
+    uniPairClass: UniswapV2PairClass,
+    path:  [string, string],
+    tokenAddress: string
+) {
+    const initialReserves = uniPairClass.getSortedReserves(path);
+    const sortedReserves = uniPairClass.getSortedReserves(path);
+    const sortedTokens = uniPairClass.sortTokens(path[0], path[1]);
+    if(path[0] === sortedTokens[0] && path[0] === tokenAddress) {
+      return sortedReserves[0];
+    } else {
+      return initialReserves[1];
+    }
+}
+
+export const getSortedContractReserves = async function(
+    uniPairClass: UniswapV2PairClass,
+    path: [string, string]
+) {
+    const contractReserves = await uniPair.getReserves();
+    const sortedTokens = uniPairClass.sortTokens(path[0], path[1]);
+    if(sortedTokens[0] === path[0]) {
+        return contractReserves;
+      } else {
+        return [contractReserves[1], contractReserves[0]];
+    }
+}
+
 export const getAmountsRespectingSlippageFromSwapETHForExactTokens = async function(
     userPosition: UserPosition,
     incrementValue: BigNumber

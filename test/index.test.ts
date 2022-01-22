@@ -4,7 +4,7 @@ import assert from "assert";
 import { BigNumber, Contract, Signer } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
-import { assertAddressExist } from "./assertions.test";
+import { assertAddressExist, assertReservesAreEquals } from "./assertions.test";
 import { UserPosition } from "./types.test";
 import { 
   getDeadline, 
@@ -15,7 +15,9 @@ import {
   swapTokensForExactETHFromContract,
   swapETHForExactTokensFromContract ,
   simulateFrontrunWithMaxSlippage,
-  getAmountsRespectingSlippageFromSwapETHForExactTokens  
+  getAmountsRespectingSlippageFromSwapETHForExactTokens,
+  getClassTokenReserve,
+  getSortedContractReserves
 } from "./helpers.test";
 
 export let deployer: SignerWithAddress;
@@ -115,14 +117,8 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
     await swapExactEthForTokensFromContract(ETH_SWAP_AMOUNT, token0.address, swapper);
 
     const finalBalance = await token0.balanceOf(swapper.address);
-    const contractFinalReserves = await uniPair.getReserves();
-
-    // console.log("Router swapped amount", formatEther(finalBalance).toString(), "\n");
-    // console.log("Contract Final Weth reserves: ", formatEther(contractFinalReserves[0]));
-    // console.log("Contract Final Token reserves: ", formatEther(contractFinalReserves[1]));
 
     assert.ok(finalBalance.gt(0));
-
   });
 
   it("Swap Eth To Tokens Via The UniV2Pair Class", async function() {
@@ -138,10 +134,6 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
       BigNumber.from(1), 
       [weth.address, token0.address]
     );
-
-    // console.log("Class swappedAmount: ", formatEther(swappedAmount!));
-    // console.log("Class final weth reserves", formatEther(uniPairClass.wethReserves));
-    // console.log("Class final token reserves", formatEther(uniPairClass.tokenReserves));
 
     assert.ok(uniPairClass.token0Reserves.gt(contractToken0Reserves));
     assert.ok(uniPairClass.token1Reserves.lt(contractToken1Rerserves));
@@ -162,14 +154,6 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
       [weth.address, token0.address]
     );
 
-    // console.log("Uniswap class token0 reserves", formatEther(pairReserves[0]));
-    // console.log("Uniswap class token1 Reserves", formatEther(pairReserves[1]));
-    // console.log("Class swapped amount ", formatEther(classSwappedAmount!), "\n");
-
-    // console.log("Contract token0 reserves ", formatEther(contractFinalReserves[0]));
-    // console.log("Contract token1 reserves ", formatEther(contractFinalReserves[1]));
-    // console.log("Contract swapped amount ", formatEther(contractSwappedAmount), "\n");
-
     assert.ok(contractSwappedAmount.eq(classSwappedAmount[1]));
     assert.ok(contractFinalReserves[1].eq(uniPairClass.token1Reserves));
     assert.ok(contractFinalReserves[0].eq(uniPairClass.token0Reserves));
@@ -182,16 +166,9 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
 
     const initialBalance = await swapper.getBalance();
 
-    const totalGasSpent = await swapExactTokensForEthFromContract(swapper, TOKEN_SWAP_AMOUNT);
+    await swapExactTokensForEthFromContract(swapper, TOKEN_SWAP_AMOUNT);
  
-    const reserves = await uniPair.getReserves();
-    
     const finalBalance = await swapper.getBalance();
-    // console.log("Amount of gas swapper without counting gas fees: ", formatEther(finalBalance.sub(initialBalance).add(totalGasSpent)));
-
-    // console.log("Swapped amount From Contract: ", formatEther(finalBalance.sub(initialBalance)));
-    // console.log("Contract token0 reserves ", formatEther(reserves[0]));
-    // console.log("Contract token1 reserves ", formatEther(reserves[1]));
 
     assert.ok(initialBalance.lt(finalBalance));
     
@@ -212,20 +189,10 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
       path
     );
 
-    // console.log("Class swappedAmount: ", formatEther(swappedAmount[1]));
-    // console.log("Class final token0 reserves", formatEther(uniPairClass.token0Reserves));
-    // console.log("Class final token1 reserves", formatEther(uniPairClass.token1Reserves));
-
     const sortedReserves = uniPairClass.getSortedReserves(path);
 
-    if(path[0] === token0.address) {
-      assert.ok(sortedReserves[0].gt(contractToken0Reserves));
-      assert.ok(sortedReserves[1].lt(contractToken1Rerserves));
-    } else {
-      assert.ok(sortedReserves[0].lt(contractToken0Reserves));
-      assert.ok(sortedReserves[1].gt(contractToken1Rerserves));
-    }
-
+    assert.ok(sortedReserves[0].gt(contractToken0Reserves));
+    assert.ok(sortedReserves[1].lt(contractToken1Rerserves));
   });
 
   it("Swap Same Amount Of Eth From Contract And Class", async function() {
@@ -246,11 +213,7 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
     );
 
     assert.ok(swappedAmountFromContractWithoutGasfees.eq(swappedAmounts[1]!));
-    assert.ok(reservesAfterContractSwap[1].eq(uniPairClass.token1Reserves));
-    assert.ok(reservesAfterContractSwap[0].eq(uniPairClass.token0Reserves));
-    assert.ok(reservesAfterContractSwap[0].eq(uniPairClass.reserves[0]));
-    assert.ok(reservesAfterContractSwap[1].eq(uniPairClass.reserves[1]));
-
+    assertReservesAreEquals(reservesAfterContractSwap, uniPairClass);
   });
 
   it("Swap ETH For Exact Tokens On Contract", async function() {
@@ -274,10 +237,6 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
     );
       
     const finBalance = await token0.balanceOf(swapper.address);
-    const reserves = await uniPair.getReserves();
-
-    // console.log("token0 reserves from contract: ", formatEther(reserves[0]));
-    // console.log("token1 reserves from contract: ", formatEther(reserves[1]));
 
     assert.ok(initBalance.lt(finBalance));
   });
@@ -285,32 +244,17 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
   it("Swap ETH For Exact Tokens On Class", async function() {
     const uniPairClass = await deployNewPairClass();
 
-    const path = [weth.address, token0.address];
-    const initialReserves = uniPairClass.getSortedReserves(path)
-    let initialTokenReserve;
-    if(path[1] === uniPairClass.token1) {
-      initialTokenReserve = initialReserves[1];
-    } else {
-      initialTokenReserve = initialReserves[0];
-    }
+    const path: [string, string] = [weth.address, token0.address];
+
+    const initialTokenReserve = getClassTokenReserve(uniPairClass, path, path[1]);
     const swappedAmount = uniPairClass.simulateSwapETHForExactTokens(
       TOKEN_SWAP_AMOUNT,
       path
     );
 
-    const finalReserves = uniPairClass.getSortedReserves(path);
-    let finalTokenReserve;
-    if(path[1] === uniPairClass.token1) {
-      finalTokenReserve = finalReserves[1];
-    } else {
-      finalTokenReserve = finalReserves[0];
-    }
+    const finalTokenReserve = getClassTokenReserve(uniPairClass, path, path[1]);
 
     assert.ok(finalTokenReserve.lt(initialTokenReserve));
-
-    // console.log("Swapped Amount: ", formatEther(swappedAmount!), "(should be ", formatEther(TOKEN_SWAP_AMOUNT), ")");
-    // console.log("token0 reserves from class: ", formatEther(uniPairClass.reserves[0]));
-    // console.log("token1 reserves from class: ", formatEther(uniPairClass.reserves[1]));
   });
 
   it("Swap Same Amount For ETH for Exact Tokens An Contract And Class", async function() {
@@ -356,11 +300,6 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
     const fees_spent = await swapTokensForExactETHFromContract(swapper, amountOut);
       
     const finBalance = await swapper.getBalance();
-    const reserves = await uniPair.getReserves();
-
-    // console.log("Swapped amount: ", formatEther(finBalance.sub(initBalance).add(fees_spent)));
-    // console.log("token0 reserves from contract: ", formatEther(reserves[0]));
-    // console.log("token1 reserves from contract: ", formatEther(reserves[1]));
 
     assert.ok(finBalance.sub(initBalance).add(fees_spent).eq(amountOut));
   });
@@ -368,27 +307,16 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
   it("swapTokensForExactETH From Class", async function() {
     const uniPairClass = await deployNewPairClass();
 
-    const path = [token0.address, weth.address];
-    const initialReserves = uniPairClass.getSortedReserves(path);
-    let initialTokenReserve;
-    if(path[0] === uniPairClass.token1) {
-      initialTokenReserve = initialReserves[1];
-    } else {
-      initialTokenReserve = initialReserves[0];
-    }
+    const path: [string, string] = [token0.address, weth.address];
+
+    const initialTokenReserve = getClassTokenReserve(uniPairClass, path, path[0]);
     const amountOut = parseEther("1");
     const swappedAmount = uniPairClass.simulateSwapTokensForExactETH(
       amountOut,
       path
     );
 
-    const finalReserves = uniPairClass.getSortedReserves(path);
-    let finalTokenReserve;
-    if(path[0] === uniPairClass.token1) {
-      finalTokenReserve = finalReserves[1];
-    } else {
-      finalTokenReserve = finalReserves[0];
-    }
+    const finalTokenReserve = getClassTokenReserve(uniPairClass, path, path[0]);
 
     assert.ok(finalTokenReserve.gt(initialTokenReserve));
     
@@ -563,19 +491,11 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
   it("getAmountsOut From Contract And Class Are Equals", async function() {
     const uniPairClass = await deployNewPairClass();
 
-    const contractReserves = await uniPair.getReserves();
-    let sortedContractReserves = [];
-
     const amountIn = parseEther("1");
-    const path = [weth.address, token0.address];
+    const path: [string, string] = [weth.address, token0.address];
     const amountOutClass = uniPairClass.getAmountsOut(amountIn, path);
-    const sortedTokens = uniPairClass.sortTokens(path[0], path[1]);
-    if(sortedTokens[0] === path[0]) {
-      sortedContractReserves = contractReserves;
-    } else {
-      sortedContractReserves[0] = contractReserves[1];
-      sortedContractReserves[1] = contractReserves[0];
-  }
+
+    const sortedContractReserves = await getSortedContractReserves(uniPairClass, path);
     const amountOutContract = await router.getAmountOut(
       amountIn, 
       sortedContractReserves[0], 
@@ -590,10 +510,11 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
     const price = token0AmountAddedToLiquidity.mul(parseEther("1")).div(wethAmounAddedToLiquidity);
     const amountIn = wethAmounAddedToLiquidity.mul(10).div(100);
     const amountOut = amountIn.mul(price).div(parseEther("1")).mul(80).div(100);
+    const path: [string, string] = [weth.address, token0.address];
     const userPosition: UserPosition = { 
       amountIn: amountIn,
       amountOut: amountOut,
-      path: [weth.address, token0.address] 
+      path: path
     };
 
     console.log("price: ", formatEther(price));
@@ -619,20 +540,6 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
     
     const deadline = await getDeadline(deployer.provider!);
     
-    const reserves1 = await uniPair.getReserves();
-    let sortedContractReserves1 = [];
-    const sortedTokens = uniPairClass.sortTokens(userPosition.path[0], userPosition.path[1]);
-    if(sortedTokens[0] === userPosition.path[0]) {
-      sortedContractReserves1 = reserves1;
-    } else {
-      sortedContractReserves1[0] = reserves1[1];
-      sortedContractReserves1[1] = reserves1[0];
-    }
-    const initialPrice = sortedContractReserves1[1].mul(parseEther("1")).div(sortedContractReserves1[0]);
-    console.log("Initial reserves: ", formatEther(sortedContractReserves1[0]), formatEther(sortedContractReserves1[1]));
-    console.log("Initial Price (reserves1[0] / reserves1[1])", formatEther(initialPrice));
-
-
     await router.swapExactETHForTokens(
       frontrunAmountOutMin,
       userPosition.path,
@@ -641,19 +548,9 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
       { value: frontrunAmountInWithInvertedSlippage }
     );
 
-    const reserves2 = await uniPair.getReserves();
-    let sortedContractReserves2 = [];
-    if(sortedTokens[0] === userPosition.path[0]) {
-      sortedContractReserves2 = reserves2;
-    } else {
-      sortedContractReserves2[0] = reserves2[1];
-      sortedContractReserves2[1] = reserves2[0];
-    }
+    const sortedContractReserves2 = await getSortedContractReserves(uniPairClass, path);
 
     const finalPrice = sortedContractReserves2[1].mul(parseEther("1")).div(sortedContractReserves2[0]);
-
-    console.log("Final reserves: ", formatEther(reserves2[0]), formatEther(reserves2[1]));
-    console.log("Final Price (amountOut / amountIn)", formatEther(finalPrice));
 
     assert.ok(
       finalPrice.lt(targetPrice.add(targetPrice.mul(15).div(1000))) &&
