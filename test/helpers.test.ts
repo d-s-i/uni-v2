@@ -22,11 +22,11 @@ export const deployNewPairClass = async function() {
       );
 }
 
-export const resetEthBalances = async function(addresses: string[]) {
+export const resetEthBalances = async function(addresses: string[], value: BigNumber) {
     for(const i of addresses) {
         await hre.network.provider.send("hardhat_setBalance", [
             i,
-            hexValue(parseEther("100000000000")),
+            hexValue(value),
           ]);
     }
 }

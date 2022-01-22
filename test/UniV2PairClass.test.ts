@@ -26,7 +26,7 @@ export class UniswapV2PairClass {
 
     quote(amountA: BigNumber, path: string[]) {
         this._checkLiquidity("quote");
-        const [reserveIn, reserveOut] = this.getSortedReserves(path[0], path[1]);
+        const [reserveIn, reserveOut] = this.getSortedReserves(path);
         return amountA.mul(reserveOut).div(reserveIn);
     }
 
@@ -37,16 +37,16 @@ export class UniswapV2PairClass {
         return tokenANum.lt(tokenBNum) ? [tokenA, tokenB] : [tokenB, tokenA];
     }
 
-    getSortedReserves(tokenA: string, tokenB: string) {
-        const [_token0] = this.sortTokens(tokenA, tokenB);
-        return tokenA === _token0 ? [this._token0Reserves, this._token1Reserves] : [this._token1Reserves, this._token0Reserves];
+    getSortedReserves(path: string[]) {
+        const [_token0] = this.sortTokens(path[0], path[1]);
+        return path[0] === _token0 ? [this._token0Reserves, this._token1Reserves] : [this._token1Reserves, this._token0Reserves];
     }
 
     getAmountsOut(amountIn: BigNumber, path: string[]) {
         this._checkPathLengthIsAtLeast2(path, "getAmountsOut");
         let amounts: BigNumber[] = [];
         amounts[0] = amountIn;
-        const [reserveIn, reserveOut] = this.getSortedReserves(path[0], path[1]);
+        const [reserveIn, reserveOut] = this.getSortedReserves(path);
         amounts[1] = this._getAmountOut(amountIn, reserveIn, reserveOut);
 
         return amounts;
@@ -59,7 +59,7 @@ export class UniswapV2PairClass {
         this._checkPathLengthIsAtLeast2(path, "getAmountsIn");
         let amounts: BigNumber[] = [];
         amounts[1] = amountOut;
-        const [reserveIn, reserveOut] = this.getSortedReserves(path[0], path[1]);
+        const [reserveIn, reserveOut] = this.getSortedReserves(path);
         amounts[0] = this._getAmountIn(amounts[1], reserveIn, reserveOut);
 
         return amounts;
@@ -67,7 +67,7 @@ export class UniswapV2PairClass {
 
     getSlippageCreatedFromAmountIn(amountIn: BigNumber, path: string[]) {
 
-        const sortedReserves = this.getSortedReserves(path[0], path[1]);
+        const sortedReserves = this.getSortedReserves(path);
         const initialPrice = sortedReserves[1].mul(parseEther("1")).div(sortedReserves[0]);
         const [,amountOut] = this.getAmountsOut(amountIn, path);
         const finalPrice = amountOut.mul(parseEther("1")).div(amountIn);
@@ -81,7 +81,7 @@ export class UniswapV2PairClass {
         // const slippage = amountIn.mul(1000).div(amounts[0]).toNumber();
 
         // return slippage / 1000;
-        const sortedReserves = this.getSortedReserves(path[0], path[1]);
+        const sortedReserves = this.getSortedReserves(path);
         const initialPrice = sortedReserves[1].mul(parseEther("1")).div(sortedReserves[0]);
         const finalPrice = amountOut.mul(parseEther("1")).div(amountIn);
         return initialPrice.mul(parseEther("1")).div(finalPrice);
