@@ -1,5 +1,5 @@
 import { BigNumber } from "ethers";
-import { formatEther } from "ethers/lib/utils";
+import { formatEther, parseEther } from "ethers/lib/utils";
 
 export class UniswapV2PairClass {
     private _token0Reserves: BigNumber;
@@ -65,22 +65,26 @@ export class UniswapV2PairClass {
         return amounts;
     }
 
-    // getSlippageCreatedFromAmountIn(amountIn: BigNumber, path: string[]) {
-    //     const reserves = this.getSortedReserves(path[0], path[1]);
-    //     const price = this.quote(amountIn, reserves[0], reserves[1]);
-    //     const amounts = this.getAmountsOut(amountIn, path);
+    getSlippageCreatedFromAmountIn(amountIn: BigNumber, path: string[]) {
 
-    //     const slippage = amounts[1].mul(1000).div(price).toNumber();
+        const sortedReserves = this.getSortedReserves(path[0], path[1]);
+        const initialPrice = sortedReserves[1].mul(parseEther("1")).div(sortedReserves[0]);
+        const [,amountOut] = this.getAmountsOut(amountIn, path);
+        const finalPrice = amountOut.mul(parseEther("1")).div(amountIn);
 
-    //     return slippage / 1000;
-    // }
+        return initialPrice.mul(parseEther("1")).div(finalPrice);
+    }
 
-    getSlippageCreatedFromSwapETHForExactTokens(amountIn: BigNumber,amountOut: BigNumber, path: string[]) {
-        const amounts = this.getAmountsIn(amountOut, path);
+    getSlippageExposedFromSwapETHForExactTokens(amountIn: BigNumber, amountOut: BigNumber, path: string[]) {
+        // const amounts = this.getAmountsIn(amountOut, path);
 
-        const slippage = amountIn.mul(1000).div(amounts[0]).toNumber();
+        // const slippage = amountIn.mul(1000).div(amounts[0]).toNumber();
 
-        return slippage / 1000;
+        // return slippage / 1000;
+        const sortedReserves = this.getSortedReserves(path[0], path[1]);
+        const initialPrice = sortedReserves[1].mul(parseEther("1")).div(sortedReserves[0]);
+        const finalPrice = amountOut.mul(parseEther("1")).div(amountIn);
+        return initialPrice.mul(parseEther("1")).div(finalPrice);
     }
 
     simulateSwapExactETHForTokens(

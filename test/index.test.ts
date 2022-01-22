@@ -1,10 +1,11 @@
 import { ethers } from "hardhat";
-import { parseEther, formatEther } from "ethers/lib/utils";
+import { parseEther, formatEther, parseUnits } from "ethers/lib/utils";
 import assert from "assert";
 import { BigNumber, Contract, Signer } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 import { assertAddressExist } from "./assertions.test";
+import { UserPosition } from "./types.test";
 import { 
   getDeadline, 
   swapExactEthForTokensFromContract, 
@@ -28,8 +29,8 @@ let factory: Contract;
 export let router: Contract;
 export let uniPair: Contract;
 
-const token0AmountAddedToLiquidity = parseEther("1000");
-const wethAmounAddedToLiquidity = parseEther("1000");
+const token0AmountAddedToLiquidity = parseEther("1000000");
+const wethAmounAddedToLiquidity = parseEther("10000000000");
 
 const assertDeployements = false;
 const assertSwapTests = true;
@@ -470,106 +471,41 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
   //   assert.ok(reservesAfterContractSwap[1].eq(uniPairClass.reserves[1]));
   // });
 
-  it("Can Tell If Frontun Is Profitable", async function() {
+  // it("Can Tell If Frontun Is Profitable", async function() {
 
-    const contractReserves = await uniPair.getReserves();
+  //   const contractReserves = await uniPair.getReserves();
 
-    const initContract = { contractToken0Reserves: contractReserves[0], contractToken1Rerserves: contractReserves[1] };
-    const frontrunArgs = { initialSwapAmount: parseEther("100"), signer: swapper };
-    const userSwapArgs = { swapAmount: parseEther("10"), amountOutMin: BigNumber.from("1") };
+  //   const initContract = { contractToken0Reserves: contractReserves[0], contractToken1Rerserves: contractReserves[1] };
+  //   const frontrunArgs = { initialSwapAmount: parseEther("100"), signer: swapper };
+  //   const userSwapArgs = { swapAmount: parseEther("10"), amountOutMin: BigNumber.from("1") };
     
-    const netProfits = await simulateFrontrunWithMaxSlippage(
-      initContract,
-      frontrunArgs,
-      userSwapArgs
-    );
+  //   const netProfits = await simulateFrontrunWithMaxSlippage(
+  //     initContract,
+  //     frontrunArgs,
+  //     userSwapArgs
+  //   );
 
-    assert.ok(netProfits.gt(0));
+  //   assert.ok(netProfits.gt(0));
     
-  });
+  // });
 
-  it("Can Tell If Frontun Is Profitable With Increased Gas Fees On Sells", async function() {
+  // it("Can Tell If Frontun Is Profitable With Increased Gas Fees On Sells", async function() {
 
-    const contractReserves = await uniPair.getReserves();
-    const uniPairClass = await deployNewPairClass();
+  //   const contractReserves = await uniPair.getReserves();
 
-    const initContract = { contractToken0Reserves: contractReserves[0], contractToken1Rerserves: contractReserves[1] };
-    const frontrunArgs = { initialSwapAmount: parseEther("100"), signer: swapper };
-    const userSwapArgs = { swapAmount: parseEther("10"), amountOutMin: BigNumber.from("1") };
+  //   const initContract = { contractToken0Reserves: contractReserves[0], contractToken1Rerserves: contractReserves[1] };
+  //   const frontrunArgs = { initialSwapAmount: parseEther("100"), signer: swapper };
+  //   const userSwapArgs = { swapAmount: parseEther("10"), amountOutMin: BigNumber.from("1") };
     
-    const profits = await simulateFrontrunWithMaxSlippage(
-      initContract,
-      frontrunArgs,
-      userSwapArgs
-    );
+  //   const profits = await simulateFrontrunWithMaxSlippage(
+  //     initContract,
+  //     frontrunArgs,
+  //     userSwapArgs
+  //   );
 
-    // console.log(uniPairClass.getSlippageCreated(parseEther("100"), [weth.address, token0.address]));
+  //   assert.ok(profits.gt(0));
 
-    // console.log(`Frontrun profits: ${formatEther(profits)}`);
-
-    // console.log("In: 1 eth, out: 100 tokens");
-    // uniPairClass.getMaxSlippage(parseEther("1"), parseEther("100"), [weth.address, token0.address]);
-    // console.log("In: 1 eth, out: 1000 tokens");
-    // uniPairClass.getMaxSlippage(parseEther("1"), parseEther("1000"), [weth.address, token0.address]);
-
-    assert.ok(profits.gt(0));
-
-    const deadline = await getDeadline(deployer.provider!);
-    // swapExactETHForTokens(
-    //   uint amountOutMin, 
-    //   address[] calldata path, 
-    //   address to, 
-    //   uint deadline
-    // )
-    // await uniPair.swapExactETHForTokens(
-    //   parseEther("100"),
-    //   [weth.address, token0.address],
-    //   swapper.address,
-    //   deadline,
-    //   { value: parseEther("1") }
-    // );
-
-    // console.log(
-    //   uniPairClass.getMaxAllowedSlippageExactETHForTokens(
-    //     parseEther("1"),
-    //     parseEther("0.8"),
-    //     [weth.address, token0.address]
-    //   )
-    // );
-
-    // swapETHForExactTokens(
-    //   uint amountOut, 
-    //   address[] calldata path, 
-    //   address to, 
-    //   uint deadline
-    // )
-    // await uniPair.swapETHForExactTokens(
-    //   parseEther("100"),
-    //   [weth.address, token0.address],
-    //   swapper.address,
-    //   deadline,
-    //   { value: parseEther("1") }
-    // );
-  
-    // console.log(
-    //   uniPairClass.getMaxAllowedSlippageETHForExactTokens(
-    //     parseEther("1"),
-    //     parseEther("0.8"),
-    //     [weth.address, token0.address]
-    //   )
-    // );
-
-    // const frontrunAmountOut = uniPairClass.getAmountOutForETHForExactTokens(
-    //   { 
-    //     amountIn: parseEther("10"),
-    //     amountOut: parseEther("8"),
-    //     path: [weth.address, token0.address] 
-    //   }
-    // );
-    
-    // console.log(formatEther(frontrunAmountOut));
-    
-  });
+  // });
 
   // it("Quotes From Contract And Class Are Equals", async function() {
   //   const uniPairClass = await deployNewPairClass();
@@ -606,66 +542,242 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
   //   assert.ok(amountOutClass[1].eq(amountOutContract));
   // });
 
-  it("Frontrun" , async function() {
+  // it("Frontrun" , async function() {
 
-    const deadline = await getDeadline(deployer.provider!);
+  //   const deadline = await getDeadline(deployer.provider!);
 
-    const uniPairClass = await deployNewPairClass();
+  //   const uniPairClass = await deployNewPairClass();
 
-    const userPosition =       { 
-      amountIn: parseEther("1"),
-      amountOut: parseEther("0.8"),
+  //   const userPosition: UserPosition = { 
+  //     amountIn: parseEther("20"),
+  //     amountOut: parseEther("35000"),
+  //     path: [weth.address, token0.address] 
+  //   };
+
+  //   // const quote1 = uniPairClass.quote(parseEther("1"), userPosition.path);
+  //   const classReserves = uniPairClass.getSortedReserves(userPosition.path[0], userPosition.path[1]);
+  //   // const price = classReserves[1].div(classReserves[0]);
+  //   const slippage = uniPairClass.getSlippageExposedFromSwapETHForExactTokens(userPosition.amountIn, userPosition.amountOut, userPosition.path);
+  //   // console.log("slippage", 1/slippage);
+  //   // const executionPrice = price.mul(Math.round((1/slippage)));
+  //   // console.log("currPrice", price);
+  //   // console.log("executionPrice", executionPrice);
+
+  //   // console.log("+formatEther(classReserves[1])", +formatEther(classReserves[1]));
+  //   // console.log("+price", +price);
+  //   // console.log("+price * slippage", +price * slippage);
+  //   // console.log("+formatEther(classReserves[0])", +formatEther(classReserves[0]));
+  //   // const frontrunAmountIn = (+formatEther(classReserves[1]) / (+price * slippage)) - +formatEther(classReserves[0]);
+    
+  //   // const [frontrunAmountIn, frontrunAmountOutMin] = await getAmountsRespectingSlippageFromSwapETHForExactTokens(
+  //   //   userPosition,
+  //   //   parseUnits("1", "16")
+  //   // );
+  //   // const frontrunAmountIn = (classReserves[1].mul(1000).div(executionPrice)).sub(classReserves[0]);
+  //   // console.log("frontrunAmountIn", frontrunAmountIn);
+    
+  //   const ONE = ethers.BigNumber.from(1);
+  //   const TWO = ethers.BigNumber.from(2);
+
+  //   function sqrt(value: BigNumber) {
+  //     let z = value.add(ONE).div(TWO);
+  //     let y = value;
+  //     while (z.sub(y).isNegative()) {
+  //         y = z;
+  //         z = value.div(z).add(z).div(TWO);
+  //     }
+  //     return y;
+  //   }
+
+  //   // const frontrunAmountIn = classReserves[0].mul(Math.round((slippage - 1) * 100000)).div(100000).div(2); // give 122.5
+  //   console.log("From second technic, amountIn is: ", formatEther(frontrunAmountIn));
+  //   // const [, frontrunAmountOutMin] = uniPairClass.getAmountsOut(frontrunAmountIn, userPosition.path);
+
+  //   // router = router.connect(frontrunner);
+
+  //   // const reserves1 = await uniPair.getReserves();
+  //   // console.log("Initial reserves: ", formatEther(reserves1[0]), formatEther(reserves1[1]));
+  //   // console.log("reserves1[0] / reserves1[1]", reserves1[0].mul(1000).div(reserves1[1]).toNumber() / 1000);
+  //   // console.log("reserves1[0] * reserves1[1]", formatEther(reserves1[0].mul(reserves1[1])));
+
+  //   // await router.swapExactETHForTokens(
+  //   //   frontrunAmountOutMin,
+  //   //   userPosition.path,
+  //   //   frontrunner.address,
+  //   //   deadline,
+  //   //   { value: frontrunAmountIn }
+  //   // );
+
+  //   // router = router.connect(swapper);
+  //   // await router.swapExactETHForTokens(
+  //   //   userPosition.amountOut,
+  //   //   userPosition.path,
+  //   //   frontrunner.address,
+  //   //   deadline,
+  //   //   { value: userPosition.amountIn }
+  //   // );
+
+  //   const reserves2 = await uniPair.getReserves();
+  //   console.log("Final reserves: ", formatEther(reserves2[0]), formatEther(reserves2[1]));
+  //   console.log("reserves2[0] / reserves2[1]", reserves2[0].mul(1000000).div(reserves2[1]).toNumber() / 1000000);
+  //   // console.log("reserves2[0] * reserves2[1]", formatEther(reserves2[0].mul(reserves2[1])));
+
+  //   // const quote2 = await router.quote(parseEther("1"), reserves2[0], reserves2[1]);
+
+  //   // const slippageCreated = quote1.mul(1000).div(quote2).toNumber() / 1000;
+  //   // console.log("Quote 1 : ", formatEther(quote1), "Quote 2 : ", formatEther(quote2), "slippage created : ", slippageCreated);
+
+  //   // assert.strictEqual(slippageCreated, slippage);
+  // });
+
+  // it("Give the right price with decimals if price is greater than 0", function() {
+  //   const token0Reserves = parseEther("200000");
+  //   const wethReserves = parseEther("100");
+
+  //   const price = token0Reserves.div(wethReserves);
+  //   assert.ok(price.eq(2000));
+  // });
+
+  // it("Gives the right price with decimals if price is lower than 0", function() {
+  //   const token0Reserves = parseEther("200000");
+  //   const wethReserves = parseEther("100");
+
+  //   // const price = token0Reserves.div(wethReserves);
+  //   // const price = token0Reserves.mul(1000).div(wethReserves).eq(0) ? wethReserves.div(token0Reserves) : token0Reserves.div(wethReserves);
+  //   let price = token0Reserves.mul(parseEther("1")).div(wethReserves);
+  //   console.log("eq 0 ?", price.eq(0), formatEther(price));
+  //   if(price.eq(0)) {
+  //     price = wethReserves.mul(parseEther("1")).div(token0Reserves);
+  //   }
+  //   console.log("price", formatEther(price));
+
+  //   // assert.ok(price.eq(2000));
+  // });
+  
+  const displayVariables = false;
+  // it("Calculate frontrun amount correctly", async function() {
+
+  //   const userPosition: UserPosition = { 
+  //     amountIn: parseEther("10"),
+  //     amountOut: parseEther("18500"),
+  //     path: [weth.address, token0.address] 
+  //   };
+
+  //   const uniPairClass = await deployNewPairClass();
+  //   const [reservesIn, reservesOut] = uniPairClass.getSortedReserves(userPosition.path[0], userPosition.path[1]);
+  //   const currentPrice = reservesOut.div(reservesIn);
+  //   // const slippage = uniPairClass.getSlippageExposedFromSwapETHForExactTokens(userPosition.amountIn, userPosition.amountOut, userPosition.path);
+  //   // const targetPrice = currentPrice.mul(parseEther(Math.round(1 / slippage).toString()));
+  //   // const frontrunAmountIn = (reservesOut.mul(1000).div(targetPrice)).sub(reservesIn);
+  //   // const targetPrice = userPosition.amountOut.div(userPosition.amountIn).eq(0) ? userPosition.amountIn.div(userPosition.amountOut) :  userPosition.amountOut.div(userPosition.amountIn);
+  //   const targetPrice = userPosition.amountOut.mul(parseEther("1")).div(userPosition.amountIn);
+  //   console.log("targetPrice", formatEther(targetPrice));
+  //   const frontrunMaxAmountIn = (reservesOut.mul(parseEther("1")).div(targetPrice)).sub(reservesIn);
+  //   const frontrunSlippage = uniPairClass.getSlippageCreatedFromAmountIn(frontrunMaxAmountIn, userPosition.path);
+  //   const invertedSlippage = parseEther("1").mul(parseEther("1")).div(frontrunSlippage);
+  //   const frontrunAmountInWithInvertedSlippage = frontrunMaxAmountIn.mul(invertedSlippage).div(parseEther("1"));
+  //   const frontrunAmountInWithSlippage = frontrunMaxAmountIn.mul(frontrunSlippage.sub(parseEther("1"))).div(parseEther("1"));
+  //   console.log("frontrunMaxAmountIn", formatEther(frontrunMaxAmountIn));
+  //   console.log("frontrunAmountInWithInvertedSlippage", formatEther(frontrunAmountInWithInvertedSlippage));
+  //   console.log("frontrunAmountInWithSlippage", formatEther(frontrunAmountInWithSlippage));
+  //   console.log("created slippage: ", formatEther(frontrunSlippage), formatEther(invertedSlippage));
+    
+  //   displayVariables && console.log("reservesIn", formatEther(reservesIn));
+  //   displayVariables && console.log("reservesOut", formatEther(reservesOut));
+  //   displayVariables && console.log("currentPrice", currentPrice);
+  //   // displayVariables && console.log("slippage", slippage);
+  //   displayVariables && console.log("targetPrice", targetPrice);
+  //   displayVariables && console.log("frontrunMaxAmountIn", formatEther(frontrunMaxAmountIn));
+    
+  //   const [,frontrunAmountOutMin] = uniPairClass.getAmountsOut(frontrunAmountInWithInvertedSlippage, userPosition.path);
+  //   // const [brutFrontrunAmountIn, brutFrontrunAmountOutMin] = await getAmountsRespectingSlippageFromSwapETHForExactTokens(
+  //   //   userPosition,
+  //   //   parseUnits("1", "17")
+  //   // );
+  //   // displayVariables && console.log("brutFrontrunAmountIn", formatEther(brutFrontrunAmountIn));
+
+  //   const deadline = await getDeadline(deployer.provider!);
+    
+  //   const reserves1 = await uniPair.getReserves();
+  //   console.log("Initial reserves: ", formatEther(reserves1[0]), formatEther(reserves1[1]));
+  //   console.log("reserves1[0] / reserves1[1]", formatEther(reserves1[1].mul(parseEther("1")).div(reserves1[0])));
+    
+  //   await router.swapExactETHForTokens(
+  //     frontrunAmountOutMin,
+  //     userPosition.path,
+  //     frontrunner.address,
+  //     deadline,
+  //     { value: frontrunAmountInWithInvertedSlippage }
+  //   );
+
+  //   console.log("Frontrun swap done");
+
+  //   // await router.swapExactETHForTokens(
+  //   //   brutFrontrunAmountIn,
+  //   //   userPosition.path,
+  //   //   frontrunner.address,
+  //   //   deadline,
+  //   //   { value: brutFrontrunAmountOutMin }
+  //   // );
+
+  //   // router = router.connect(swapper);
+  //   // await router.swapExactETHForTokens(
+  //   //   userPosition.amountOut,
+  //   //   userPosition.path,
+  //   //   frontrunner.address,
+  //   //   deadline,
+  //   //   { value: userPosition.amountIn }
+  //   // );
+    
+  //   const reserves2 = await uniPair.getReserves();
+  //   console.log("Final reserves: ", formatEther(reserves2[0]), formatEther(reserves2[1]));
+  //   console.log("reserves2[0] / reserves2[1]", formatEther(reserves2[1].mul(parseEther("1")).div(reserves2[0])));
+    
+  // });
+
+  it("Adjust The Uniswap Price To The Target", async function() {
+    const userPosition: UserPosition = { 
+      amountIn: parseEther("100000000"),
+      amountOut: parseEther("8000"),
       path: [weth.address, token0.address] 
     };
 
-    const quote1 = uniPairClass.quote(parseEther("1"), userPosition.path);
-    const slippage = uniPairClass.getSlippageCreatedFromSwapETHForExactTokens(userPosition.amountIn, userPosition.amountOut, userPosition.path);
-    console.log("slippage", slippage);
-    // const [frontrunAmountIn, frontrunAmountOutMin] = await getAmountsRespectingSlippageFromSwapETHForExactTokens();
-    const classReserves = uniPairClass.getSortedReserves(userPosition.path[0], userPosition.path[1]);
+    const uniPairClass = await deployNewPairClass();
+    const [reservesIn] = uniPairClass.getSortedReserves(userPosition.path[0], userPosition.path[1]);
+    const userSlippage = uniPairClass.getSlippageExposedFromSwapETHForExactTokens(
+      userPosition.amountIn,
+      userPosition.amountOut,
+      userPosition.path
+    );
+    console.log("userSlippage", formatEther(userSlippage));
+    const targetPrice = userPosition.amountOut.mul(parseEther("1")).div(userPosition.amountIn);
+    console.log("targetPrice", formatEther(targetPrice));
 
-    const frontrunAmountIn = classReserves[0].mul(Math.round((slippage - 1) * 1000)).div(1000).div(2);
-    const [, frontrunAmountOutMin] = uniPairClass.getAmountsOut(frontrunAmountIn, userPosition.path);
-    console.log("From second technic, amountIn is: ", formatEther(frontrunAmountIn));
-
-    router = router.connect(frontrunner);
-
+    const frontrunMaxAmountIn = (reservesIn.mul(userSlippage.sub(parseEther("1")))).div(parseEther("1")).div(2);
+    const frontrunSlippage = uniPairClass.getSlippageCreatedFromAmountIn(frontrunMaxAmountIn, userPosition.path);
+    const invertedSlippage = parseEther("1").mul(parseEther("1")).div(frontrunSlippage);
+    const frontrunAmountInWithInvertedSlippage = frontrunMaxAmountIn.mul(invertedSlippage).div(parseEther("1"));
+    console.log("amountIn", formatEther(frontrunAmountInWithInvertedSlippage));
+    const [,frontrunAmountOutMin] = uniPairClass.getAmountsOut(frontrunAmountInWithInvertedSlippage, userPosition.path);
+    
+    const deadline = await getDeadline(deployer.provider!);
+    
     const reserves1 = await uniPair.getReserves();
     console.log("Initial reserves: ", formatEther(reserves1[0]), formatEther(reserves1[1]));
-    console.log("reserves1[0] / reserves1[1]", reserves1[0].mul(1000).div(reserves1[1]).toNumber() / 1000);
-        // console.log("reserves1[0] * reserves1[1]", formatEther(reserves1[0].mul(reserves1[1])));
+    console.log("reserves1[0] / reserves1[1]", formatEther(reserves1[0].mul(parseEther("1")).div(reserves1[1])));
 
     await router.swapExactETHForTokens(
       frontrunAmountOutMin,
       userPosition.path,
       frontrunner.address,
       deadline,
-      { value: frontrunAmountIn }
+      { value: frontrunAmountInWithInvertedSlippage }
     );
-
-    // router = router.connect(swapper);
-    // await router.swapExactETHForTokens(
-    //   userPosition.amountOut,
-    //   userPosition.path,
-    //   frontrunner.address,
-    //   deadline,
-    //   { value: userPosition.amountIn }
-    // );
 
     const reserves2 = await uniPair.getReserves();
     console.log("Final reserves: ", formatEther(reserves2[0]), formatEther(reserves2[1]));
-    console.log("reserves2[0] / reserves2[1]", reserves2[0].mul(1000000).div(reserves2[1]).toNumber() / 1000000);
-    // console.log("reserves2[0] * reserves2[1]", formatEther(reserves2[0].mul(reserves2[1])));
-
-    // const quote2 = await router.quote(parseEther("1"), reserves2[0], reserves2[1]);
-
-    // const slippageCreated = quote1.mul(1000).div(quote2).toNumber() / 1000;
-    // console.log("Quote 1 : ", formatEther(quote1), "Quote 2 : ", formatEther(quote2), "slippage created : ", slippageCreated);
-
-    // assert.strictEqual(slippageCreated, slippage);
-
-
-
+    console.log("reserves2[0] / reserves2[1]", formatEther(reserves2[0].mul(parseEther("1")).div(reserves2[1])));
+    
   });
   
 });
