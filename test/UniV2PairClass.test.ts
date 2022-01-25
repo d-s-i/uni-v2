@@ -75,6 +75,34 @@ export class UniswapV2PairClass {
         return initialPrice.mul(parseEther("1")).div(finalPrice);
     }
 
+    estimateSlippageExactETHForTokens(
+        path: [string, string],
+        amountIn: BigNumber,
+        amountOutMin: BigNumber
+    ) {
+        this._checkEntryIsWeth(path);
+        const tempUniPairClass = new UniswapV2PairClass(
+            path,
+            path[0],
+            this.token0Reserves,
+            this.token1Reserves,
+        );
+
+        const initialSortedReserves = tempUniPairClass.getSortedReserves(path);
+        const initialPrice = initialSortedReserves[1].mul(parseEther("1")).div(initialSortedReserves[0]);
+        const [,amountOut] = tempUniPairClass.simulateSwapExactETHForTokens(
+            amountIn,
+            amountOutMin,
+            path
+        );
+        const finalSortedReserves = tempUniPairClass.getSortedReserves(path);
+        const finalPrice = finalSortedReserves[1].mul(parseEther("1")).div(finalSortedReserves[0]);
+
+        const createdSlippage = initialPrice.mul(parseEther("1")).div(finalPrice);
+        return createdSlippage;
+
+    }
+
     getSlippageExposedFromSwapETHForExactTokens(amountIn: BigNumber, amountOut: BigNumber, path: string[]) {
         // const amounts = this.getAmountsIn(amountOut, path);
 
@@ -209,31 +237,31 @@ export class UniswapV2PairClass {
 
     _checkEntryIsWeth(path: string[]) {
         if(path[0] !== this.wethAddress) {
-            throw new Error(`UniswapV2PairClass::simulateSwapExactETHForTokens - path[0] Should Be Weth Address`);
+            throw new Error(`UniswapV2PairClass::simulateSwapExactETHForTokens - path[0] Should Be Weth Address (value: ${path})`);
         }
     }
 
     _checkExitIsWeth(path: string[]) {
         if(path[path.length - 1] !== this.wethAddress) {
-            throw new Error(`UniswapV2PairClass::simulateSwapTokensForExactETH - path[1] Should Be Weth Address`);
+            throw new Error(`UniswapV2PairClass::simulateSwapTokensForExactETH - path[1] Should Be Weth Address (value: ${path})`);
         }
     }
 
     _checkAmountGreaterThanZero(amount: BigNumber, fnName: string) {
         if(amount.lte(0)) {
-            throw new Error(`UniswapV2PairClass::${fnName} - amount Is Lower Than or Equal To 0`);
+            throw new Error(`UniswapV2PairClass::${fnName} - amount Is Lower Than or Equal To 0 (value: ${amount})`);
         }
     }
 
     _checkPathLengthIsAtLeast2(path: string[], fnName: string) {
         if(path.length < 2) {
-            throw new Error(`UniswapV2PairClass::${fnName} - Invalid Path Length`);
+            throw new Error(`UniswapV2PairClass::${fnName} - Invalid Path Length (value: ${path})`);
         }
     }
 
     _checkLiquidity(fnName: string) {
         if(this._token0Reserves.lte(0) || this._token1Reserves.lte(0)) {
-            throw new Error(`UniswapV2PairClass::${fnName} - Not Enough Liquidity`);
+            throw new Error(`UniswapV2PairClass::${fnName} - Not Enough Liquidity (token0Reserves: ${this._token0Reserves}, token1Reserves: ${this._token1Reserves})`);
         }
     }
 
