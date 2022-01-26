@@ -75,10 +75,10 @@ export class UniswapV2PairClass {
         return initialPrice.mul(parseEther("1")).div(finalPrice);
     }
 
-    estimateSlippageExactETHForTokens(
-        path: [string, string],
+    getExpectedSlippageExactETHForTokens(
         amountIn: BigNumber,
-        amountOutMin: BigNumber
+        amountOutMin: BigNumber,
+        path: [string, string]
     ) {
         this._checkEntryIsWeth(path);
         const tempUniPairClass = new UniswapV2PairClass(
@@ -90,7 +90,7 @@ export class UniswapV2PairClass {
 
         const initialSortedReserves = tempUniPairClass.getSortedReserves(path);
         const initialPrice = initialSortedReserves[1].mul(parseEther("1")).div(initialSortedReserves[0]);
-        const [,amountOut] = tempUniPairClass.simulateSwapExactETHForTokens(
+        tempUniPairClass.simulateSwapExactETHForTokens(
             amountIn,
             amountOutMin,
             path
@@ -100,15 +100,34 @@ export class UniswapV2PairClass {
 
         const createdSlippage = initialPrice.mul(parseEther("1")).div(finalPrice);
         return createdSlippage;
-
     }
 
-    getSlippageExposedFromSwapETHForExactTokens(amountIn: BigNumber, amountOut: BigNumber, path: string[]) {
-        // const amounts = this.getAmountsIn(amountOut, path);
+    getExpectedSlippageETHForExactTokens(
+        amountOut: BigNumber,
+        path: [string, string]
+    ) {
+        this._checkEntryIsWeth(path);
+        const tempUniPairClass = new UniswapV2PairClass(
+            path,
+            path[0],
+            this.token0Reserves,
+            this.token1Reserves,
+        );
 
-        // const slippage = amountIn.mul(1000).div(amounts[0]).toNumber();
+        const initialSortedReserves = tempUniPairClass.getSortedReserves(path);
+        const initialPrice = initialSortedReserves[1].mul(parseEther("1")).div(initialSortedReserves[0]);
+        tempUniPairClass.simulateSwapETHForExactTokens(
+            amountOut,
+            path
+        );
+        const finalSortedReserves = tempUniPairClass.getSortedReserves(path);
+        const finalPrice = finalSortedReserves[1].mul(parseEther("1")).div(finalSortedReserves[0]);
 
-        // return slippage / 1000;
+        const createdSlippage = initialPrice.mul(parseEther("1")).div(finalPrice);
+        return createdSlippage;
+    }
+
+    getUnexpectedSlippage(amountIn: BigNumber, amountOut: BigNumber, path: string[]) {
         const sortedReserves = this.getSortedReserves(path);
         const initialPrice = sortedReserves[1].mul(parseEther("1")).div(sortedReserves[0]);
         const finalPrice = amountOut.mul(parseEther("1")).div(amountIn);

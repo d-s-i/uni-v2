@@ -4,7 +4,7 @@ import { parseEther, hexValue, formatEther, parseUnits } from "ethers/lib/utils"
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { Provider } from "@ethersproject/abstract-provider";
 
-import { UserPosition } from "./types.test";
+import { UserPositionETHForExactTokens, UserPositionExactETHForTokens } from "./types.test";
 import { router, weth, token0, uniPair, deployer } from "./index.test";
 import { UniswapV2PairClass } from "./UniV2PairClass.test";
 
@@ -224,12 +224,12 @@ export const getSortedContractReserves = async function(
 }
 
 export const getAmountsRespectingSlippageFromSwapETHForExactTokens = async function(
-    userPosition: UserPosition,
+    userPosition: UserPositionETHForExactTokens,
     incrementValue: BigNumber
 ) {
     const uniPairClass2 = await deployNewPairClass();
 
-    const unexpectedSlippage = uniPairClass2.getSlippageExposedFromSwapETHForExactTokens(userPosition.amountIn, userPosition.amountOut, userPosition.path);
+    const unexpectedSlippage = uniPairClass2.getUnexpectedSlippage(userPosition.amountInMax, userPosition.amountOut, userPosition.path);
     const classReserves = uniPairClass2.getSortedReserves(userPosition.path);
     let frontrunAmountIn = (classReserves[0].mul(unexpectedSlippage).div(parseEther("1"))).sub(classReserves[0]);
     let [, frontrunAmountOutMin] = uniPairClass2.getAmountsOut(frontrunAmountIn, userPosition.path);
@@ -274,17 +274,17 @@ export const getAmountsRespectingSlippageFromSwapETHForExactTokens = async funct
 
 const getMaxValues = function(
     uniPairClass: UniswapV2PairClass,
-    userPosition: UserPosition,
+    userPosition: UserPositionETHForExactTokens | UserPositionExactETHForTokens,
     unexpectedUserSlippage: BigNumber
 ) {
     const [reservesIn] = uniPairClass.getSortedReserves(userPosition.path);
     const frontrunMaxAmountIn = (reservesIn.mul(unexpectedUserSlippage.sub(parseEther("1")))).div(parseEther("1")).div(2);
     const [, frontrunMaxAmountOutMin] = uniPairClass.getAmountsOut(frontrunMaxAmountIn, userPosition.path);
 
-    const highBoundFrontrunSlippage = uniPairClass.estimateSlippageExactETHForTokens(
-        userPosition.path, 
+    const highBoundFrontrunSlippage = uniPairClass.getExpectedSlippageExactETHForTokens(
         frontrunMaxAmountIn, 
-        frontrunMaxAmountOutMin
+        frontrunMaxAmountOutMin,
+        userPosition.path
     );
 
     return [frontrunMaxAmountIn, frontrunMaxAmountOutMin, highBoundFrontrunSlippage];
@@ -292,30 +292,28 @@ const getMaxValues = function(
 
 const getMinValues = function(
     uniPairClass: UniswapV2PairClass,
-    userPosition: UserPosition,
+    userPosition: UserPositionETHForExactTokens | UserPositionExactETHForTokens,
     maxValues: { frontrunMaxAmountIn: BigNumber, highBoundFrontrunSlippage: BigNumber }
 ) {
     const invertedSlippage = parseEther("1").mul(parseEther("1")).div(maxValues.highBoundFrontrunSlippage);
     const frontrunMinAmountIn = maxValues.frontrunMaxAmountIn.mul(invertedSlippage).div(parseEther("1"));
     const [,frontrunMinAmountOutMin] = uniPairClass.getAmountsOut(frontrunMinAmountIn, userPosition.path);
 
-    const lowBoundFrontrunSlippage = uniPairClass.estimateSlippageExactETHForTokens(
-        userPosition.path, 
+    const lowBoundFrontrunSlippage = uniPairClass.getExpectedSlippageExactETHForTokens(
         frontrunMinAmountIn, 
-        frontrunMinAmountOutMin
+        frontrunMinAmountOutMin,
+        userPosition.path
     );
 
     return [frontrunMinAmountIn, frontrunMinAmountOutMin, lowBoundFrontrunSlippage];
 }
 
-export const getAmountInRespectingSlippageETHToExactTokens = async function(
-    userPosition: UserPosition
-) {
+export const getAmountsRespectingUnexpectedSlippageETHForExactTokens = async function(userPosition: UserPositionETHForExactTokens) {
 
     const uniPairClass = await deployNewPairClass();
     
-    const unexpectedUserSlippage = uniPairClass.getSlippageExposedFromSwapETHForExactTokens(
-        userPosition.amountIn, 
+    const unexpectedUserSlippage = uniPairClass.getUnexpectedSlippage(
+        userPosition.amountInMax, 
         userPosition.amountOut, 
         userPosition.path
     );
@@ -342,8 +340,11 @@ export const getAmountInRespectingSlippageETHToExactTokens = async function(
         lowBoundFrontrunSlippage
     ];
 
-    while(!createdSlippage.eq(unexpectedUserSlippage)) {
+    let prevFrontrunAmountIn = BigNumber.from(0);
+    let amountsDidChange = !(prevFrontrunAmountIn.eq(frontrunAmountIn));
+    while(!createdSlippage.eq(unexpectedUserSlippage) && amountsDidChange) {
 
+        prevFrontrunAmountIn = frontrunAmountIn;
         if(createdSlippage.lt(unexpectedUserSlippage)) {
             frontrunMinAmountIn = frontrunAmountIn;
             frontrunAmountIn = (frontrunMinAmountIn.add(frontrunMaxAmountIn)).div(2);
@@ -354,16 +355,179 @@ export const getAmountInRespectingSlippageETHToExactTokens = async function(
 
         [,frontrunAmountOut] = uniPairClass.getAmountsOut(frontrunAmountIn, userPosition.path);
 
-        createdSlippage = uniPairClass.estimateSlippageExactETHForTokens(
-            userPosition.path, 
+        createdSlippage = uniPairClass.getExpectedSlippageExactETHForTokens(
             frontrunAmountIn, 
-            frontrunAmountOut
+            frontrunAmountOut,
+            userPosition.path
         );
+        amountsDidChange = !(prevFrontrunAmountIn.eq(frontrunAmountIn));
     }
 
-    console.log("Target Slippage: ", formatEther(unexpectedUserSlippage));
-    console.log("Created Slippage: ", formatEther(createdSlippage));
+    // console.log("Target Slippage: ", formatEther(unexpectedUserSlippage));
+    // console.log("Created Slippage: ", formatEther(createdSlippage));
 
     return [frontrunAmountIn, frontrunAmountOut];
+}
 
+const getFrontrunMaxValuesFullSlippage = function(
+    uniPairClass: UniswapV2PairClass,
+    userPosition: UserPositionETHForExactTokens | UserPositionExactETHForTokens,
+    totalUserSlippage: BigNumber
+) {
+    const [reservesIn] = uniPairClass.getSortedReserves(userPosition.path);
+    const frontrunMaxAmountIn = (reservesIn.mul(totalUserSlippage.sub(parseEther("1")))).div(parseEther("1")).div(2);
+    const [, frontrunMaxAmountOutMin] = uniPairClass.getAmountsOut(frontrunMaxAmountIn, userPosition.path);
+
+    const highBoundFrontrunSlippage = uniPairClass.getExpectedSlippageExactETHForTokens(
+        frontrunMaxAmountIn, 
+        frontrunMaxAmountOutMin,
+        userPosition.path
+    );
+
+    return [frontrunMaxAmountIn, frontrunMaxAmountOutMin, highBoundFrontrunSlippage];
+}
+
+const getFrontrunMinValuesFullSlippage = function(
+    uniPairClass: UniswapV2PairClass,
+    userPosition: UserPositionETHForExactTokens | UserPositionExactETHForTokens,
+    maxValues: { frontrunMaxAmountIn: BigNumber, highBoundFrontrunSlippage: BigNumber }
+) {
+    const invertedSlippage = parseEther("1").mul(parseEther("1")).div(maxValues.highBoundFrontrunSlippage);
+    const frontrunMinAmountIn = maxValues.frontrunMaxAmountIn.mul(invertedSlippage).div(parseEther("1"));
+    const [,frontrunMinAmountOutMin] = uniPairClass.getAmountsOut(frontrunMinAmountIn, userPosition.path);
+
+    const lowBoundFrontrunSlippage = uniPairClass.getExpectedSlippageExactETHForTokens(
+        frontrunMinAmountIn, 
+        frontrunMinAmountOutMin,
+        userPosition.path
+    );
+
+    return [frontrunMinAmountIn, frontrunMinAmountOutMin, lowBoundFrontrunSlippage];
+}
+
+// User calls ETHForExactTokens but frontrunner will call ExactETHForTokens
+export const getAmountsRespectingFullSlippageETHForExactTokens = async function(userPosition: UserPositionETHForExactTokens) {
+    const uniPairClass = await deployNewPairClass();
+    
+    const unexpectedUserSlippage = uniPairClass.getUnexpectedSlippage(
+        userPosition.amountInMax, 
+        userPosition.amountOut, 
+        userPosition.path
+    );
+    const expectedUserSlippage = uniPairClass.getExpectedSlippageETHForExactTokens(userPosition.amountOut, userPosition.path);
+
+    const totalSlippage = unexpectedUserSlippage.sub(expectedUserSlippage).add(parseEther("1"));
+
+    let [frontrunMaxAmountIn, _,highBoundFrontrunSlippage] = getFrontrunMaxValuesFullSlippage(
+        uniPairClass,
+        userPosition,
+        totalSlippage
+    );
+
+    let [frontrunMinAmountIn, frontrunMinAmountOutMin, lowBoundFrontrunSlippage] = getFrontrunMinValuesFullSlippage(
+        uniPairClass,
+        userPosition,
+        { frontrunMaxAmountIn, highBoundFrontrunSlippage }
+    );
+
+    let [
+        frontrunAmountIn, 
+        frontrunAmountOut, 
+        createdSlippage
+    ] = [
+        frontrunMinAmountIn, 
+        frontrunMinAmountOutMin, 
+        lowBoundFrontrunSlippage
+    ];
+
+    let prevFrontrunAmountIn = BigNumber.from(0);
+    let amountsDidChange = !(prevFrontrunAmountIn.eq(frontrunAmountIn));
+    while(!createdSlippage.eq(totalSlippage) && amountsDidChange) {
+
+        prevFrontrunAmountIn = frontrunAmountIn;
+        if(createdSlippage.lt(totalSlippage)) {
+            frontrunMinAmountIn = frontrunAmountIn;
+            frontrunAmountIn = (frontrunMinAmountIn.add(frontrunMaxAmountIn)).div(2);
+        } else {
+            frontrunMaxAmountIn = frontrunAmountIn;
+            frontrunAmountIn = (frontrunMinAmountIn.add(frontrunMaxAmountIn)).div(2);
+        }
+
+        [,frontrunAmountOut] = uniPairClass.getAmountsOut(frontrunAmountIn, userPosition.path);
+
+        createdSlippage = uniPairClass.getExpectedSlippageExactETHForTokens(
+            frontrunAmountIn,
+            frontrunAmountOut,
+            userPosition.path 
+        );
+        amountsDidChange = !(prevFrontrunAmountIn.eq(frontrunAmountIn));
+    }
+
+    // console.log("Target Slippage: ", formatEther(totalSlippage));
+    // console.log("Created Slippage: ", formatEther(createdSlippage));
+
+    return [frontrunAmountIn, frontrunAmountOut];
+}
+
+export const getAmountsRespectingFullSlippageExactETHForTokens = async function(userPosition: UserPositionExactETHForTokens) {
+    const uniPairClass = await deployNewPairClass();
+    
+    const unexpectedUserSlippage = uniPairClass.getUnexpectedSlippage(
+        userPosition.amountIn, 
+        userPosition.amountOutMin, 
+        userPosition.path
+    );
+    const expectedUserSlippage = uniPairClass.getExpectedSlippageExactETHForTokens(userPosition.amountIn, userPosition.amountOutMin, userPosition.path);
+
+    const totalSlippage = unexpectedUserSlippage.sub(expectedUserSlippage).add(parseEther("1"));
+
+    let [frontrunMaxAmountIn, _,highBoundFrontrunSlippage] = getFrontrunMaxValuesFullSlippage(
+        uniPairClass,
+        userPosition,
+        totalSlippage
+    );
+
+    let [frontrunMinAmountIn, frontrunMinAmountOutMin, lowBoundFrontrunSlippage] = getFrontrunMinValuesFullSlippage(
+        uniPairClass,
+        userPosition,
+        { frontrunMaxAmountIn, highBoundFrontrunSlippage }
+    );
+
+    let [
+        frontrunAmountIn, 
+        frontrunAmountOut, 
+        createdSlippage
+    ] = [
+        frontrunMinAmountIn, 
+        frontrunMinAmountOutMin, 
+        lowBoundFrontrunSlippage
+    ];
+
+    let prevFrontrunAmountIn = BigNumber.from(0);
+    let amountsDidChange = !(prevFrontrunAmountIn.eq(frontrunAmountIn));
+    while(!createdSlippage.eq(totalSlippage) && amountsDidChange) {
+
+        prevFrontrunAmountIn = frontrunAmountIn;
+        if(createdSlippage.lt(totalSlippage)) {
+            frontrunMinAmountIn = frontrunAmountIn;
+            frontrunAmountIn = (frontrunMinAmountIn.add(frontrunMaxAmountIn)).div(2);
+        } else {
+            frontrunMaxAmountIn = frontrunAmountIn;
+            frontrunAmountIn = (frontrunMinAmountIn.add(frontrunMaxAmountIn)).div(2);
+        }
+
+        [,frontrunAmountOut] = uniPairClass.getAmountsOut(frontrunAmountIn, userPosition.path);
+
+        createdSlippage = uniPairClass.getExpectedSlippageExactETHForTokens(
+            frontrunAmountIn,
+            frontrunAmountOut,
+            userPosition.path 
+        );
+        amountsDidChange = !(prevFrontrunAmountIn.eq(frontrunAmountIn));
+    }
+
+    // console.log("Target Slippage: ", formatEther(totalSlippage));
+    // console.log("Created Slippage: ", formatEther(createdSlippage));
+
+    return [frontrunAmountIn, frontrunAmountOut];
 }

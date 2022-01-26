@@ -9,7 +9,7 @@ import {
   assertReservesAreEquals,
   assertStrictEqualityToTheNearestHundredth 
 } from "./assertions.test";
-import { UserPosition } from "./types.test";
+import { UserPositionETHForExactTokens, UserPositionExactETHForTokens } from "./types.test";
 import { 
   getDeadline, 
   swapExactEthForTokensFromContract, 
@@ -22,7 +22,9 @@ import {
   getAmountsRespectingSlippageFromSwapETHForExactTokens,
   getClassTokenReserve,
   getSortedContractReserves,
-  getAmountInRespectingSlippageETHToExactTokens
+  getAmountsRespectingUnexpectedSlippageETHForExactTokens,
+  getAmountsRespectingFullSlippageETHForExactTokens,
+  getAmountsRespectingFullSlippageExactETHForTokens
 } from "./helpers.test";
 
 export let deployer: SignerWithAddress;
@@ -36,8 +38,8 @@ let factory: Contract;
 export let router: Contract;
 export let uniPair: Contract;
 
-const token0AmountAddedToLiquidity = parseEther("6489645635");
-const wethAmounAddedToLiquidity = parseEther("1000");
+const token0AmountAddedToLiquidity = parseEther("54654684");
+const wethAmounAddedToLiquidity = parseEther("100");
 
 const assertDeployements = false;
 const assertSwapTests = true;
@@ -116,7 +118,7 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
 
   const ETH_SWAP_AMOUNT = wethAmounAddedToLiquidity.mul(5).div(100);
   const TOKEN_SWAP_AMOUNT = token0AmountAddedToLiquidity.mul(10).div(100);
-  const SLIPPAGE = 90; // 100 - slippage = xx%
+  const SLIPPAGE = 30; // SLIPPAGE = 1 <=> 1%
 
   it("Swap via Router", async function() {
 
@@ -518,15 +520,15 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
     const price = sortedContractReserves[1].mul(parseEther("1")).div(sortedContractReserves[0]);
     const amountIn = wethAmounAddedToLiquidity.mul(1).div(100);
     const amountOut = amountIn.mul(price).div(parseEther("1")).mul(100 - SLIPPAGE).div(100);
-    const userPosition: UserPosition = { 
-      amountIn: amountIn,
+    const userPosition: UserPositionETHForExactTokens = { 
+      amountInMax: amountIn,
       amountOut: amountOut,
       path: path
     };
 
     const [reservesIn] = uniPairClass.getSortedReserves(userPosition.path);
-    const userMaxSlippage = uniPairClass.getSlippageExposedFromSwapETHForExactTokens(
-      userPosition.amountIn,
+    const userMaxSlippage = uniPairClass.getUnexpectedSlippage(
+      userPosition.amountInMax,
       userPosition.amountOut,
       userPosition.path
     );
@@ -535,7 +537,7 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
     const frontrunMaxAmountIn = (reservesIn.mul(userMaxSlippage.sub(parseEther("1")))).div(parseEther("1")).div(2);
     // console.log("frontrunMaxAmountIn", frontrunMaxAmountIn);
     const [,frontrunMaxAmountOut] = uniPairClass.getAmountsOut(frontrunMaxAmountIn, userPosition.path);
-    const frontrunSlippage = uniPairClass.estimateSlippageExactETHForTokens(path, frontrunMaxAmountIn, frontrunMaxAmountOut);
+    const frontrunSlippage = uniPairClass.getExpectedSlippageExactETHForTokens(frontrunMaxAmountIn, frontrunMaxAmountOut, path);
 
     const deadline = await getDeadline(deployer.provider!);
     
@@ -560,7 +562,8 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
     
   });
 
-  it("Calculate The Exact Slippage With Binary Search", async function() {
+  const displayData = true;
+  it("Calculate The Exact Unexpected Slippage For `swapETHForExactTokens` With Binary Search", async function() {
     const path: [string, string] = [weth.address, token0.address];
     
     const uniPairClass = await deployNewPairClass();
@@ -568,21 +571,22 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
     const price = sortedContractReserves[1].mul(parseEther("1")).div(sortedContractReserves[0]);
     const amountIn = wethAmounAddedToLiquidity.mul(1).div(100);
     const amountOut = amountIn.mul(price).div(parseEther("1")).mul(100 - SLIPPAGE).div(100);
-    const userPosition: UserPosition = { 
-      amountIn: amountIn,
+    const userPosition: UserPositionETHForExactTokens = { 
+      amountInMax: amountIn,
       amountOut: amountOut,
       path: path
     };
 
-    const targetPrice = userPosition.amountOut.mul(parseEther("1")).div(userPosition.amountIn);
-    console.log("targetPrice", formatEther(targetPrice));
+    const targetPrice = userPosition.amountOut.mul(parseEther("1")).div(userPosition.amountInMax);
+    displayData && console.log("targetPrice", formatEther(targetPrice));
 
-    const [frontrunAmountIn, frontrunAmountOut] = await getAmountInRespectingSlippageETHToExactTokens(
+    const [frontrunAmountIn, frontrunAmountOut] = await getAmountsRespectingUnexpectedSlippageETHForExactTokens(
       userPosition
     );
 
     const deadline = await getDeadline(deployer.provider!);
     
+    // frontrunner will always use `swapExactETHForTokens` (until proven wrong)
     await router.swapExactETHForTokens(
       frontrunAmountOut,
       userPosition.path,
@@ -594,16 +598,144 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
     const sortedContractReserves2 = await getSortedContractReserves(uniPairClass, path);
 
     const finalPrice = sortedContractReserves2[1].mul(parseEther("1")).div(sortedContractReserves2[0]);
-    console.log("Final Price: ", formatEther(finalPrice));
+    displayData && console.log("Final Price: ", formatEther(finalPrice));
 
     const precision = finalPrice.mul(parseEther("1")).div(targetPrice);
-    console.log("Precision: ", formatEther(precision));
+    displayData && console.log("Precision: ", formatEther(precision));
 
     assert.ok(
       precision.gt(parseEther("0.99999")) &&
       precision.lt(parseEther("1.00001"))
     );
     
+  });
+
+  it("Allow Frontrun + User Swap Considering User's SlippageProject using `swapETHForExactTokens`", async function() {
+    const path: [string, string] = [weth.address, token0.address];
+    
+    const uniPairClass = await deployNewPairClass();
+    const sortedContractReserves = await getSortedContractReserves(uniPairClass, path);
+    const price = sortedContractReserves[1].mul(parseEther("1")).div(sortedContractReserves[0]);
+    const amountInMax = wethAmounAddedToLiquidity.mul(1).div(100);
+    const amountOut = amountInMax.mul(price).div(parseEther("1")).mul(100 - SLIPPAGE).div(100);
+    const userPosition: UserPositionETHForExactTokens = { 
+      amountInMax: amountInMax,
+      amountOut: amountOut,
+      path: path
+    };
+
+    const targetPrice = userPosition.amountOut.mul(parseEther("1")).div(userPosition.amountInMax);
+    displayData && console.log("targetPrice", formatEther(targetPrice));
+
+    const [frontrunAmountIn, frontrunAmountOut] = await getAmountsRespectingFullSlippageETHForExactTokens(
+      userPosition
+    );
+
+    console.log("Initial Price: ", formatEther(price));
+
+    const deadline = await getDeadline(deployer.provider!);
+
+    // It's more profitable to use `swapExactETHForTokens` for the frontrunner (until proven wrong)
+    router = router.connect(frontrunner);
+    await router.swapExactETHForTokens(
+      frontrunAmountOut.mul(99).div(100),
+      userPosition.path,
+      frontrunner.address,
+      deadline,
+      { value: frontrunAmountIn.mul(99).div(100) }
+    );
+
+    const sortedContractReserves2 = await getSortedContractReserves(uniPairClass, path);
+
+    const intermediaryPrice = sortedContractReserves2[1].mul(parseEther("1")).div(sortedContractReserves2[0]);
+    console.log("Price after Frontrunner tx: ", formatEther(intermediaryPrice));
+
+    router = router.connect(swapper);
+    await router.swapETHForExactTokens(
+      userPosition.amountOut,
+      userPosition.path,
+      frontrunner.address,
+      deadline,
+      { value: userPosition.amountInMax }
+    );
+
+    const sortedContractReserves3 = await getSortedContractReserves(uniPairClass, path);
+
+    const finalPrice = sortedContractReserves3[1].mul(parseEther("1")).div(sortedContractReserves3[0]);
+    console.log("Final price: ", formatEther(finalPrice));
+
+    const precision = finalPrice.mul(parseEther("1")).div(targetPrice);
+    displayData && console.log("Precision: ", formatEther(precision));
+
+    assert.ok(
+      precision.gt(parseEther("0.9984")) &&
+      precision.lt(parseEther("1.0015"))
+    );
+  });
+  
+  it("Calculate The Exact Unexpected Slippage For `swapExactETHForTokens` With Binary Search", async function() {
+    // const amountIn = parseEther("1");
+    // const amountOutMin = parseEther("1800");
+    const path: [string, string] = [weth.address, token0.address];
+    const uniPairClass = await deployNewPairClass();    
+    const sortedContractReserves = await getSortedContractReserves(uniPairClass, path);
+    const price = sortedContractReserves[1].mul(parseEther("1")).div(sortedContractReserves[0]);
+    const amountIn = wethAmounAddedToLiquidity.mul(1).div(100);
+    const amountOutMin = amountIn.mul(price).div(parseEther("1")).mul(100 - SLIPPAGE).div(100);
+
+    const userPosition: UserPositionExactETHForTokens = { 
+      amountIn: amountIn,
+      amountOutMin: amountOutMin,
+      path: path
+    };
+
+    const [frontrunAmountIn, frontrunAmountOut] = await getAmountsRespectingFullSlippageExactETHForTokens(
+      userPosition
+    );
+
+    const targetPrice = userPosition.amountOutMin.mul(parseEther("1")).div(userPosition.amountIn);
+    displayData && console.log("targetPrice", formatEther(targetPrice));
+
+    console.log("Initial Price: ", formatEther(price));
+
+    const deadline = await getDeadline(deployer.provider!);
+
+    // It's more profitable to use `swapExactETHForTokens` for the frontrunner (until proven wrong)
+    router = router.connect(frontrunner);
+    await router.swapExactETHForTokens(
+      frontrunAmountOut.mul(99).div(100),
+      userPosition.path,
+      frontrunner.address,
+      deadline,
+      { value: frontrunAmountIn.mul(99).div(100) }
+    );
+
+    const sortedContractReserves2 = await getSortedContractReserves(uniPairClass, path);
+
+    const intermediaryPrice = sortedContractReserves2[1].mul(parseEther("1")).div(sortedContractReserves2[0]);
+    console.log("Price after Frontrunner tx: ", formatEther(intermediaryPrice));
+
+    router = router.connect(swapper);
+    await router.swapETHForExactTokens(
+      userPosition.amountOutMin,
+      userPosition.path,
+      frontrunner.address,
+      deadline,
+      { value: userPosition.amountIn }
+    );
+
+    const sortedContractReserves3 = await getSortedContractReserves(uniPairClass, path);
+
+    const finalPrice = sortedContractReserves3[1].mul(parseEther("1")).div(sortedContractReserves3[0]);
+    console.log("Final price: ", formatEther(finalPrice));
+
+    const precision = finalPrice.mul(parseEther("1")).div(targetPrice);
+    displayData && console.log("Precision: ", formatEther(precision));
+
+    assert.ok(
+      precision.gt(parseEther("0.9984")) &&
+      precision.lt(parseEther("1.0015"))
+    );
   });
   
 });
