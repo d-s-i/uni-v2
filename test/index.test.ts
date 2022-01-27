@@ -1,5 +1,5 @@
 import { ethers } from "hardhat";
-import { parseEther, formatEther, parseUnits } from "ethers/lib/utils";
+import { parseEther, formatEther } from "ethers/lib/utils";
 import assert from "assert";
 import { BigNumber, Contract, Signer } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
@@ -7,25 +7,46 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { 
   assertAddressExist, 
   assertReservesAreEquals,
-  assertStrictEqualityToTheNearestHundredth 
+  assertStrictEqualityToTheNearestHundredth,
+  assertSameStateAfterSwapBetweenClassAndContract,
+  assertClassAndContractReservesAreStrictEqual
 } from "./assertions.test";
-import { UserPositionETHForExactTokens, UserPositionExactETHForTokens } from "./types.test";
 import { 
-  getDeadline, 
-  swapExactEthForTokensFromContract, 
-  deployNewPairClass, 
-  swapExactTokensForEthFromContract,
   resetEthBalances,
-  swapTokensForExactETHFromContract,
-  swapETHForExactTokensFromContract ,
-  simulateFrontrunWithMaxSlippage,
-  getAmountsRespectingSlippageFromSwapETHForExactTokens,
+  deployNewPairClass, 
   getClassTokenReserve,
   getSortedContractReserves,
+  getDeadline, 
+  getPriceFromContract,
+  getUserPositionETHForExactTokens,
+  getUserPositionExactETHForTokens,
+} from "./helpers/helpers.test";
+import {
+  swapTokensForExactETHFromContract,
+  swapETHForExactTokensFromContract,
+  swapExactEthForTokensFromContract, 
+  swapExactTokensForEthFromContract,
+  swapExactTokensForEthLoopFromClass,
+  swapExactETHForTokensLoopFromClass,
+  SwapETHForExactTokensLoopFromClass,
+  swapExactTokensForEthLoopFromContract,
+  swapExactEthForTokensLoopFromContract,
+  swapETHForExactTokensLoopFromContract,
+} from "./helpers/swap_helpers.test";
+import {
+  getFrontrunTargetPrice,
+  frontrunETHForExactTokens,
+  frontrunExactETHForTokens,
+  backrun,
+  simulateFrontrunWithMaxSlippage,
   getAmountsRespectingUnexpectedSlippageETHForExactTokens,
+  getAmountsRespectingUnexpectedSlippageExactETHForTokens,
   getAmountsRespectingFullSlippageETHForExactTokens,
-  getAmountsRespectingFullSlippageExactETHForTokens
-} from "./helpers.test";
+  getAmountsRespectingFullSlippageExactETHForTokens,
+  estimateBackrunGas,
+  estimateFrontrunGas
+} from "./helpers/frontrun_helpers.test";
+import { UniswapV2PairClass } from "./UniV2PairClass.test";
 
 export let deployer: SignerWithAddress;
 let recolter: SignerWithAddress;
@@ -37,12 +58,20 @@ export let weth: Contract;
 let factory: Contract;
 export let router: Contract;
 export let uniPair: Contract;
+export let uniPairClass: UniswapV2PairClass;
 
-const token0AmountAddedToLiquidity = parseEther("54654684");
+const token0AmountAddedToLiquidity = parseEther("200000");
 const wethAmounAddedToLiquidity = parseEther("100");
 
-const assertDeployements = false;
-const assertSwapTests = true;
+const assertDeployements = true;
+const assertSwapContract = true;
+const assertSwapClass = true;
+const assertValuesClassEqualContract = true;
+const assertFrontruningTests = true;
+
+const ETH_SWAP_AMOUNT = wethAmounAddedToLiquidity.mul(5).div(100);
+const TOKEN_SWAP_AMOUNT = token0AmountAddedToLiquidity.mul(10).div(100);
+const SLIPPAGE = 10; // SLIPPAGE = 1 <=> 1%
 
 beforeEach(async function () {
   
@@ -84,6 +113,8 @@ beforeEach(async function () {
     { value: wethAmounAddedToLiquidity }
   );
 
+  uniPairClass = await deployNewPairClass();
+
 });
 
 assertDeployements && describe("Deployments", function () {
@@ -114,20 +145,7 @@ assertDeployements && describe("Deployments", function () {
   });
 });
 
-assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
-
-  const ETH_SWAP_AMOUNT = wethAmounAddedToLiquidity.mul(5).div(100);
-  const TOKEN_SWAP_AMOUNT = token0AmountAddedToLiquidity.mul(10).div(100);
-  const SLIPPAGE = 30; // SLIPPAGE = 1 <=> 1%
-
-  it("Swap via Router", async function() {
-
-    await swapExactEthForTokensFromContract(ETH_SWAP_AMOUNT, token0.address, swapper);
-
-    const finalBalance = await token0.balanceOf(swapper.address);
-
-    assert.ok(finalBalance.gt(0));
-  });
+assertSwapClass && describe("Swaps From Class", function() {
 
   it("Swap Eth To Tokens Via The UniV2Pair Class", async function() {
     const reserves = await uniPair.getReserves();
@@ -135,9 +153,7 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
     const contractToken0Reserves = reserves[0];
     const contractToken1Rerserves = reserves[1];
 
-    const uniPairClass = await deployNewPairClass();
-
-    const swappedAmount = uniPairClass.simulateSwapExactETHForTokens(
+    uniPairClass.simulateSwapExactETHForTokens(
       ETH_SWAP_AMOUNT, 
       BigNumber.from(1), 
       [weth.address, token0.address]
@@ -147,48 +163,12 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
     assert.ok(uniPairClass.token1Reserves.lt(contractToken1Rerserves));
   });
 
-  it("Swap Same Amounts From Eth To Tokens Between Class And Contract", async function() {
-
-    const uniPairClass = await deployNewPairClass();
-
-    await swapExactEthForTokensFromContract(ETH_SWAP_AMOUNT, token0.address, swapper);
-    
-    const contractFinalReserves = await uniPair.getReserves();
-    const contractSwappedAmount = await token0.balanceOf(swapper.address);
-
-    const classSwappedAmount = uniPairClass.simulateSwapExactETHForTokens(
-      ETH_SWAP_AMOUNT, 
-      BigNumber.from(1), 
-      [weth.address, token0.address]
-    );
-
-    assert.ok(contractSwappedAmount.eq(classSwappedAmount[1]));
-    assert.ok(contractFinalReserves[1].eq(uniPairClass.token1Reserves));
-    assert.ok(contractFinalReserves[0].eq(uniPairClass.token0Reserves));
-    assert.ok(contractFinalReserves[0].eq(uniPairClass.reserves[0]));
-    assert.ok(contractFinalReserves[1].eq(uniPairClass.reserves[1]));
-    
-  });
-
-  it("Swap Tokens For Eth From Contract", async function() {
-
-    const initialBalance = await swapper.getBalance();
-
-    await swapExactTokensForEthFromContract(swapper, TOKEN_SWAP_AMOUNT);
- 
-    const finalBalance = await swapper.getBalance();
-
-    assert.ok(initialBalance.lt(finalBalance));
-    
-  });
-
   it("Swap Tokens For Eth From Class", async function() {
     
-    const uniPairClass = await deployNewPairClass();
     const path: [string, string] = [token0.address, weth.address];
-    const initialContractReserves = await getSortedContractReserves(uniPairClass, path);
+    const initialContractReserves = await getSortedContractReserves(path);
 
-    const swappedAmount = uniPairClass.simulateSwapExactTokensForEth(
+    uniPairClass.simulateSwapExactTokensForEth(
       TOKEN_SWAP_AMOUNT, 
       BigNumber.from(1), 
       path
@@ -200,10 +180,111 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
     assert.ok(classReserves[1].lt(initialContractReserves[1]));
   });
 
+  it("Swap ETH For Exact Tokens On Class", async function() {
+
+    const path: [string, string] = [weth.address, token0.address];
+
+    const initialTokenReserve = getClassTokenReserve(path, path[1]);
+    uniPairClass.simulateSwapETHForExactTokens(
+      TOKEN_SWAP_AMOUNT,
+      path
+    );
+
+    const finalTokenReserve = getClassTokenReserve(path, path[1]);
+
+    assert.ok(finalTokenReserve.lt(initialTokenReserve));
+  });
+
+  it("swapTokensForExactETH From Class", async function() {
+
+    const path: [string, string] = [token0.address, weth.address];
+
+    const initialTokenReserve = getClassTokenReserve(path, path[0]);
+    const amountOut = BigNumber.from(1);
+    uniPairClass.simulateSwapTokensForExactETH(
+      amountOut,
+      path
+    );
+
+    const finalTokenReserve = getClassTokenReserve(path, path[0]);
+
+    assert.ok(finalTokenReserve.gt(initialTokenReserve));
+    
+  });
+
+});
+
+assertSwapContract && describe("Swaps From Contract", function() {
+
+  it("Swap via Router", async function() {
+
+    await swapExactEthForTokensFromContract(ETH_SWAP_AMOUNT, token0.address, swapper);
+
+    const finalBalance = await token0.balanceOf(swapper.address);
+
+    assert.ok(finalBalance.gt(0));
+  });
+
+  it("SwapExactTokensForEth From Contract", async function() {
+
+    const initialBalance = await swapper.getBalance();
+
+    await swapExactTokensForEthFromContract(swapper, TOKEN_SWAP_AMOUNT);
+ 
+    const finalBalance = await swapper.getBalance();
+
+    assert.ok(initialBalance.lt(finalBalance));
+    
+  });
+
+  it("SwapETHForExactTokens From Contract", async function() {
+
+    const initBalance = await token0.balanceOf(swapper.address);
+
+    await swapETHForExactTokensFromContract(BigNumber.from(1), ETH_SWAP_AMOUNT, swapper)
+      
+    const finBalance = await token0.balanceOf(swapper.address);
+
+    assert.ok(initBalance.lt(finBalance));
+  });
+
+  it("swapTokensForExactETH From Contract", async function() {
+
+    const initBalance = await swapper.getBalance();
+
+    const amountOut = BigNumber.from(1);
+
+    const fees_spent = await swapTokensForExactETHFromContract(swapper, amountOut);
+      
+    const finBalance = await swapper.getBalance();
+
+    assert.ok(finBalance.sub(initBalance).add(fees_spent).eq(amountOut));
+  });
+  
+});
+
+assertValuesClassEqualContract && describe("Values From Contract Equals Values From Class", function() {
+
+  it("Swap Same Amounts From Eth To Tokens Between Class And Contract", async function() {
+
+    await swapExactEthForTokensFromContract(ETH_SWAP_AMOUNT, token0.address, swapper);
+    
+    const reservesAfterContractSwap = await uniPair.getReserves();
+    const contractSwappedAmount = await token0.balanceOf(swapper.address);
+
+    const classSwappedAmount = uniPairClass.simulateSwapExactETHForTokens(
+      ETH_SWAP_AMOUNT, 
+      BigNumber.from(1), 
+      [weth.address, token0.address]
+    );
+
+    assert.ok(contractSwappedAmount.eq(classSwappedAmount[1]));
+    assertClassAndContractReservesAreStrictEqual(uniPairClass, reservesAfterContractSwap);
+  });
+
   it("Swap Same Amount Of Eth From Contract And Class", async function() {
 
     const initialBalance = await swapper.getBalance();
-    const uniPairClass = await deployNewPairClass();
 
     const totalGasSpent = await swapExactTokensForEthFromContract(swapper, TOKEN_SWAP_AMOUNT);
     const finalBalance = await swapper.getBalance();
@@ -217,54 +298,12 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
       [token0.address, weth.address]
     );
 
-    assert.ok(swappedAmountFromContractWithoutGasfees.eq(swappedAmounts[1]!));
+    assert.ok(swappedAmountFromContractWithoutGasfees.eq(swappedAmounts[1]));
     assertReservesAreEquals(reservesAfterContractSwap, uniPairClass);
-  });
-
-  it("Swap ETH For Exact Tokens On Contract", async function() {
-    router = router.connect(swapper);
-    const deadline = await getDeadline(deployer.provider!);
-
-    const initBalance = await token0.balanceOf(swapper.address);
-    
-    const path = [weth.address, token0.address];
-    const amountIn = await router.getAmountsIn(
-      TOKEN_SWAP_AMOUNT,
-      path
-    );
-    
-    await router.swapETHForExactTokens(
-      TOKEN_SWAP_AMOUNT,
-      path,
-      swapper.address,
-      deadline,
-      { value: amountIn[0] }
-    );
-      
-    const finBalance = await token0.balanceOf(swapper.address);
-
-    assert.ok(initBalance.lt(finBalance));
-  });
-
-  it("Swap ETH For Exact Tokens On Class", async function() {
-    const uniPairClass = await deployNewPairClass();
-
-    const path: [string, string] = [weth.address, token0.address];
-
-    const initialTokenReserve = getClassTokenReserve(uniPairClass, path, path[1]);
-    const swappedAmount = uniPairClass.simulateSwapETHForExactTokens(
-      TOKEN_SWAP_AMOUNT,
-      path
-    );
-
-    const finalTokenReserve = getClassTokenReserve(uniPairClass, path, path[1]);
-
-    assert.ok(finalTokenReserve.lt(initialTokenReserve));
   });
 
   it("Swap Same Amount For ETH for Exact Tokens An Contract And Class", async function() {
     router = router.connect(swapper);
-    const uniPairClass = await deployNewPairClass();
     const deadline = await getDeadline(deployer.provider!);
 
     const initBalance = await token0.balanceOf(swapper.address);
@@ -296,184 +335,77 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
     assert.ok(swappedAmount[1].eq(finBalance.sub(initBalance)));
   });
 
-  it("swapTokensForExactETH From Contract", async function() {
-
-    const initBalance = await swapper.getBalance();
-
-    const amountOut = BigNumber.from(1);
-
-    const fees_spent = await swapTokensForExactETHFromContract(swapper, amountOut);
-      
-    const finBalance = await swapper.getBalance();
-
-    assert.ok(finBalance.sub(initBalance).add(fees_spent).eq(amountOut));
-  });
-
-  it("swapTokensForExactETH From Class", async function() {
-    const uniPairClass = await deployNewPairClass();
-
-    const path: [string, string] = [token0.address, weth.address];
-
-    const initialTokenReserve = getClassTokenReserve(uniPairClass, path, path[0]);
-    const amountOut = BigNumber.from(1);
-    const swappedAmount = uniPairClass.simulateSwapTokensForExactETH(
-      amountOut,
-      path
-    );
-
-    const finalTokenReserve = getClassTokenReserve(uniPairClass, path, path[0]);
-
-    assert.ok(finalTokenReserve.gt(initialTokenReserve));
-    
-  });
-
   it("Swap Same Amount With swapTokensForExactETH From Contract And Class", async function() {
     const amountOut = BigNumber.from(1);
-    const uniPairClass = await deployNewPairClass();
 
-    const initBalance = await swapper.getBalance();
+    const initialBalance = await swapper.getBalance();
     const fees_spent = await swapTokensForExactETHFromContract(swapper, amountOut);
-    const finBalance = await swapper.getBalance();
-    const reserves = await uniPair.getReserves();
 
     const swappedAmount = uniPairClass.simulateSwapTokensForExactETH(
       amountOut,
       [token0.address, weth.address]
     );
 
-    assert.ok(uniPairClass.reserves[0].eq(reserves[0]));
-    assert.ok(uniPairClass.reserves[1].eq(reserves[1]));
-    assert.ok(swappedAmount[1].eq(finBalance.sub(initBalance).add(fees_spent)));
+    await assertSameStateAfterSwapBetweenClassAndContract(
+      uniPairClass, 
+      swappedAmount[1],
+      { signer: swapper, initialBalance: initialBalance, fees_spent: fees_spent }
+    );
     
   });
 
   it("Swap Same Amount After Multiple Swap With swapExactEthForTokens", async function() {
 
-    const uniPairClass = await deployNewPairClass();
-    
     const initialBalance = await token0.balanceOf(swapper.address);
-    const swap0_fees = await swapExactEthForTokensFromContract(ETH_SWAP_AMOUNT, token0.address, swapper);
-    const swap1_fees = await swapExactEthForTokensFromContract(ETH_SWAP_AMOUNT, token0.address, swapper);
-    const swap2_fees = await swapExactEthForTokensFromContract(ETH_SWAP_AMOUNT, token0.address, swapper);
+
+    const totalSwapFees = await swapExactEthForTokensLoopFromContract(3, { signer: swapper, swapAmount: ETH_SWAP_AMOUNT });
     const finalBalance = await token0.balanceOf(swapper.address);
     const reserves = await uniPair.getReserves();
-
-    const totalContractSwap = finalBalance.sub(initialBalance).add(swap0_fees).add(swap1_fees).add(swap2_fees);
+    const totalContractSwap = finalBalance.sub(initialBalance).add(totalSwapFees);
     
-    const swappedAmount0 = uniPairClass.simulateSwapExactETHForTokens(ETH_SWAP_AMOUNT, BigNumber.from(1), [weth.address, token0.address]);
-    const swappedAmount1 = uniPairClass.simulateSwapExactETHForTokens(ETH_SWAP_AMOUNT, BigNumber.from(1), [weth.address, token0.address]);
-    const swappedAmount2 = uniPairClass.simulateSwapExactETHForTokens(ETH_SWAP_AMOUNT, BigNumber.from(1), [weth.address, token0.address]);
-
-    const totalClassSwap = swappedAmount0[1].add(swappedAmount1[1]).add(swappedAmount2[1]);
+    const totalClassSwap = swapExactETHForTokensLoopFromClass(3, ETH_SWAP_AMOUNT);
 
     assert.ok(uniPairClass.reserves[0].eq(reserves[0]));
     assert.ok(uniPairClass.reserves[1].eq(reserves[1]));
     assertStrictEqualityToTheNearestHundredth(
       totalClassSwap,
       totalContractSwap
-    )
+    );
   });
 
   it("Swap Same Amount After Multiple Swap With swapExactTokensForEth", async function() {
     const initialBalance = await swapper.getBalance();
-    const uniPairClass = await deployNewPairClass();
 
-    const swap0_fees = await swapExactTokensForEthFromContract(swapper, TOKEN_SWAP_AMOUNT);
-    const swap1_fees = await swapExactTokensForEthFromContract(swapper, TOKEN_SWAP_AMOUNT);
-    const swap2_fees = await swapExactTokensForEthFromContract(swapper, TOKEN_SWAP_AMOUNT);
+    const totalSwapFees = await swapExactTokensForEthLoopFromContract(3, { signer: swapper, swapAmount: TOKEN_SWAP_AMOUNT });
     const finalBalance = await swapper.getBalance();
- 
     const reservesAfterContractSwap = await uniPair.getReserves();
-    const totalContractSwap = finalBalance.sub(initialBalance).add(swap0_fees).add(swap1_fees).add(swap2_fees);
+    const totalContractSwap = finalBalance.sub(initialBalance).add(totalSwapFees);
     
-    const swappedAmount0 = uniPairClass.simulateSwapExactTokensForEth(
-      TOKEN_SWAP_AMOUNT, 
-      BigNumber.from(1), 
-      [token0.address, weth.address]
-    );
-    const swappedAmount1 = uniPairClass.simulateSwapExactTokensForEth(
-      TOKEN_SWAP_AMOUNT, 
-      BigNumber.from(1), 
-      [token0.address, weth.address]
-    );
-    const swappedAmount2 = uniPairClass.simulateSwapExactTokensForEth(
-      TOKEN_SWAP_AMOUNT, 
-      BigNumber.from(1), 
-      [token0.address, weth.address]
-    );
-    const totalClassSwap = swappedAmount0[1].add(swappedAmount1[1]).add(swappedAmount2[1]);
+    const totalClassSwap = swapExactTokensForEthLoopFromClass(3, TOKEN_SWAP_AMOUNT);
 
     assert.ok(totalContractSwap.eq(totalClassSwap));
-    assert.ok(reservesAfterContractSwap[1].eq(uniPairClass.token1Reserves));
-    assert.ok(reservesAfterContractSwap[0].eq(uniPairClass.token0Reserves));
-    assert.ok(reservesAfterContractSwap[0].eq(uniPairClass.reserves[0]));
-    assert.ok(reservesAfterContractSwap[1].eq(uniPairClass.reserves[1]));
+    assertClassAndContractReservesAreStrictEqual(uniPairClass, reservesAfterContractSwap);
   });
 
   it("Swap Same Amount After Multiple Swap With swapETHForExactTokens", async function() {
-    const uniPairClass = await deployNewPairClass();
 
-    const path = [weth.address, token0.address];
     const initialBalance = await token0.balanceOf(swapper.address);
-    const amountIn0 = await router.getAmountsIn(
-      TOKEN_SWAP_AMOUNT,
-      path
-    );
-    const swap0_fees = await swapETHForExactTokensFromContract(
-      TOKEN_SWAP_AMOUNT,
-      amountIn0[0],
-      swapper
-    );
-
-    const amountIn1 = await router.getAmountsIn(
-      TOKEN_SWAP_AMOUNT,
-      path
-    );
-    const swap1_fees = await swapETHForExactTokensFromContract(
-      TOKEN_SWAP_AMOUNT,
-      amountIn1[0],
-      swapper
-    );
-
-    const amountIn2 = await router.getAmountsIn(
-      TOKEN_SWAP_AMOUNT,
-      path
-    );
-    const swap2_fees = await swapETHForExactTokensFromContract(
-      TOKEN_SWAP_AMOUNT,
-      amountIn2[0],
-      swapper
-    );
+    const totalSwapFees = await swapETHForExactTokensLoopFromContract(3, { swapAmount: TOKEN_SWAP_AMOUNT, signer: swapper });
     const finalBalance = await token0.balanceOf(swapper.address);
 
-
-    const swappedAmount0 = uniPairClass.simulateSwapETHForExactTokens(
-      TOKEN_SWAP_AMOUNT,
-      path
-    );
-    const swappedAmount1 = uniPairClass.simulateSwapETHForExactTokens(
-      TOKEN_SWAP_AMOUNT,
-      path
-    );
-    const swappedAmount2 = uniPairClass.simulateSwapETHForExactTokens(
-      TOKEN_SWAP_AMOUNT,
-      path
-    );
-
-    const totalContractSwap = finalBalance.sub(initialBalance).add(swap0_fees).add(swap1_fees).add(swap2_fees);
-    const totalClassSwap = swappedAmount0[1].add(swappedAmount1[1]).add(swappedAmount2[1]);
+    const totalClassSwap = SwapETHForExactTokensLoopFromClass(3, TOKEN_SWAP_AMOUNT);
+    const totalContractSwap = finalBalance.sub(initialBalance).add(totalSwapFees);
     
     const reservesAfterContractSwap = await uniPair.getReserves();
 
     assert.strictEqual(parseFloat(formatEther(totalContractSwap)).toFixed(2), parseFloat(formatEther(totalClassSwap)).toFixed(2));
-    assert.ok(reservesAfterContractSwap[1].eq(uniPairClass.token1Reserves));
-    assert.ok(reservesAfterContractSwap[0].eq(uniPairClass.token0Reserves));
-    assert.ok(reservesAfterContractSwap[0].eq(uniPairClass.reserves[0]));
-    assert.ok(reservesAfterContractSwap[1].eq(uniPairClass.reserves[1]));
+    await assertClassAndContractReservesAreStrictEqual(
+      uniPairClass, 
+      reservesAfterContractSwap,
+    );
   });
 
   it("Quotes From Contract And Class Are Equals", async function() {
-    const uniPairClass = await deployNewPairClass();
 
     const amountA = parseEther("1");
     const contractReserves = await uniPair.getReserves();
@@ -484,101 +416,69 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
   });
 
   it("getAmountsIn From Contract And Class Are Equals", async function() {
-    const uniPairClass = await deployNewPairClass();
 
-    const contractReserves = await uniPair.getReserves();
-
-    const amountOut = parseEther("1");
-    const amountInClass = uniPairClass.getAmountsIn(amountOut, [weth.address, token0.address]);
-    const amountInContract = await router.getAmountIn(amountOut, contractReserves[0], contractReserves[1]);
+    const path: [string, string] = [weth.address, token0.address];
+    const sortedContractReserves = await getSortedContractReserves(path);
+    
+    const amountInClass = uniPairClass.getAmountsIn(TOKEN_SWAP_AMOUNT, path);
+    const amountInContract = await router.getAmountIn(TOKEN_SWAP_AMOUNT, sortedContractReserves[0], sortedContractReserves[1]);
 
     assert.ok(amountInClass[0].eq(amountInContract));
   });
 
   it("getAmountsOut From Contract And Class Are Equals", async function() {
-    const uniPairClass = await deployNewPairClass();
 
     const amountIn = parseEther("1");
     const path: [string, string] = [weth.address, token0.address];
     const amountOutClass = uniPairClass.getAmountsOut(amountIn, path);
 
-    const sortedContractReserves = await getSortedContractReserves(uniPairClass, path);
+    const sortedContractReserves = await getSortedContractReserves(path);
     const amountOutContract = await router.getAmountOut(
       amountIn, 
       sortedContractReserves[0], 
       sortedContractReserves[1]
     );
 
-    const classReserves = uniPairClass.getSortedReserves([weth.address, token0.address]);
     assert.ok(amountOutClass[1].eq(amountOutContract));
   });
 
+});
+
+assertFrontruningTests && describe("Frontrunning", async function() {
+
   it("Estimates Slippage Correctly", async function() {    
-    const uniPairClass = await deployNewPairClass();
     const path: [string, string] = [weth.address, token0.address];
-    const sortedContractReserves = await getSortedContractReserves(uniPairClass, path);
-    const price = sortedContractReserves[1].mul(parseEther("1")).div(sortedContractReserves[0]);
+    const price = await getPriceFromContract(path);
+
     const amountIn = wethAmounAddedToLiquidity.mul(1).div(100);
-    const amountOut = amountIn.mul(price).div(parseEther("1")).mul(100 - SLIPPAGE).div(100);
-    const userPosition: UserPositionETHForExactTokens = { 
-      amountInMax: amountIn,
-      amountOut: amountOut,
-      path: path
-    };
-
-    const [reservesIn] = uniPairClass.getSortedReserves(userPosition.path);
-    const userMaxSlippage = uniPairClass.getUnexpectedSlippage(
-      userPosition.amountInMax,
-      userPosition.amountOut,
-      userPosition.path
-    );
-
-    // console.log("userMaxSlippage", formatEther(userMaxSlippage));
-    const frontrunMaxAmountIn = (reservesIn.mul(userMaxSlippage.sub(parseEther("1")))).div(parseEther("1")).div(2);
-    // console.log("frontrunMaxAmountIn", frontrunMaxAmountIn);
-    const [,frontrunMaxAmountOut] = uniPairClass.getAmountsOut(frontrunMaxAmountIn, userPosition.path);
-    const frontrunSlippage = uniPairClass.getExpectedSlippageExactETHForTokens(frontrunMaxAmountIn, frontrunMaxAmountOut, path);
+    const [,amountOut] = uniPairClass.getAmountsOut(amountIn, path);
+    const swapSlippage = uniPairClass.getExpectedSlippageExactETHForTokens(amountIn, amountOut, path);
 
     const deadline = await getDeadline(deployer.provider!);
     
     await router.swapExactETHForTokens(
-      frontrunMaxAmountOut,
-      userPosition.path,
+      amountOut,
+      path,
       frontrunner.address,
       deadline,
-      { value: frontrunMaxAmountIn }
+      { value: amountIn }
     );
 
-    const sortedContractReserves2 = await getSortedContractReserves(uniPairClass, path);
-
-    const finalPrice = sortedContractReserves2[1].mul(parseEther("1")).div(sortedContractReserves2[0]);
-    // console.log("Final Price: ", formatEther(finalPrice));
+    const finalPrice = await getPriceFromContract(path);
 
     const createdSlippage = price.mul(parseEther("1")).div(finalPrice);
-    // console.log("AmountIn Slippage: ", formatEther(frontrunSlippage));
-    // console.log("Created Slippage: ", formatEther(createdSlippage));
 
-    assert.ok(frontrunSlippage.eq(createdSlippage));
+    assert.ok(swapSlippage.eq(createdSlippage));
     
   });
 
-  const displayData = true;
   it("Calculate The Exact Unexpected Slippage For `swapETHForExactTokens` With Binary Search", async function() {
     const path: [string, string] = [weth.address, token0.address];
     
-    const uniPairClass = await deployNewPairClass();
-    const sortedContractReserves = await getSortedContractReserves(uniPairClass, path);
-    const price = sortedContractReserves[1].mul(parseEther("1")).div(sortedContractReserves[0]);
     const amountIn = wethAmounAddedToLiquidity.mul(1).div(100);
-    const amountOut = amountIn.mul(price).div(parseEther("1")).mul(100 - SLIPPAGE).div(100);
-    const userPosition: UserPositionETHForExactTokens = { 
-      amountInMax: amountIn,
-      amountOut: amountOut,
-      path: path
-    };
+    const userPosition = await getUserPositionETHForExactTokens(amountIn, SLIPPAGE);
 
     const targetPrice = userPosition.amountOut.mul(parseEther("1")).div(userPosition.amountInMax);
-    displayData && console.log("targetPrice", formatEther(targetPrice));
 
     const [frontrunAmountIn, frontrunAmountOut] = await getAmountsRespectingUnexpectedSlippageETHForExactTokens(
       userPosition
@@ -586,7 +486,41 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
 
     const deadline = await getDeadline(deployer.provider!);
     
-    // frontrunner will always use `swapExactETHForTokens` (until proven wrong)
+    // frontrunner will always use `swapExactETHForTokens` (always wants to swap an exact amount in)
+    router = router.connect(frontrunner);
+    await router.swapExactETHForTokens(
+      frontrunAmountOut,
+      userPosition.path,
+      frontrunner.address,
+      deadline,
+      { value: frontrunAmountIn }
+    );
+    const finalPrice = await getPriceFromContract(path);
+
+    const precision = finalPrice.mul(parseEther("1")).div(targetPrice);
+
+    assert.ok(
+      precision.gt(parseEther("0.99999")) &&
+      precision.lt(parseEther("1.00001"))
+    );
+  });
+
+  it("Calculate The Exact Unexpected Slippage For `swapExactETHForTokens` With Binary Search", async function() {
+    const path: [string, string] = [weth.address, token0.address];
+    const amountIn = wethAmounAddedToLiquidity.mul(1).div(100);
+
+    const userPosition = await getUserPositionExactETHForTokens(amountIn, SLIPPAGE);
+
+    const [frontrunAmountIn, frontrunAmountOut] = await getAmountsRespectingUnexpectedSlippageExactETHForTokens(
+      userPosition
+    );
+
+    const targetPrice = userPosition.amountOutMin.mul(parseEther("1")).div(userPosition.amountIn);
+
+    const deadline = await getDeadline(deployer.provider!);
+
+    // It's more profitable to use `swapExactETHForTokens` for the frontrunner (until proven wrong)
+    router = router.connect(frontrunner);
     await router.swapExactETHForTokens(
       frontrunAmountOut,
       userPosition.path,
@@ -595,61 +529,27 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
       { value: frontrunAmountIn }
     );
 
-    const sortedContractReserves2 = await getSortedContractReserves(uniPairClass, path);
-
-    const finalPrice = sortedContractReserves2[1].mul(parseEther("1")).div(sortedContractReserves2[0]);
-    displayData && console.log("Final Price: ", formatEther(finalPrice));
+    const finalPrice = await getPriceFromContract(path);
 
     const precision = finalPrice.mul(parseEther("1")).div(targetPrice);
-    displayData && console.log("Precision: ", formatEther(precision));
 
     assert.ok(
       precision.gt(parseEther("0.99999")) &&
       precision.lt(parseEther("1.00001"))
     );
-    
   });
 
-  it("Allow Frontrun + User Swap Considering User's SlippageProject using `swapETHForExactTokens`", async function() {
+  it("Allow Frontrun + User Swap Considering User's Slippage using `swapETHForExactTokens`", async function() {
     const path: [string, string] = [weth.address, token0.address];
     
-    const uniPairClass = await deployNewPairClass();
-    const sortedContractReserves = await getSortedContractReserves(uniPairClass, path);
-    const price = sortedContractReserves[1].mul(parseEther("1")).div(sortedContractReserves[0]);
-    const amountInMax = wethAmounAddedToLiquidity.mul(1).div(100);
-    const amountOut = amountInMax.mul(price).div(parseEther("1")).mul(100 - SLIPPAGE).div(100);
-    const userPosition: UserPositionETHForExactTokens = { 
-      amountInMax: amountInMax,
-      amountOut: amountOut,
-      path: path
-    };
+    const amountOut = token0AmountAddedToLiquidity.mul(1).div(100);
+    const userPosition = await getUserPositionETHForExactTokens(amountOut, SLIPPAGE); 
 
     const targetPrice = userPosition.amountOut.mul(parseEther("1")).div(userPosition.amountInMax);
-    displayData && console.log("targetPrice", formatEther(targetPrice));
-
-    const [frontrunAmountIn, frontrunAmountOut] = await getAmountsRespectingFullSlippageETHForExactTokens(
-      userPosition
-    );
-
-    console.log("Initial Price: ", formatEther(price));
-
+      
+    await frontrunETHForExactTokens(userPosition, frontrunner);
+      
     const deadline = await getDeadline(deployer.provider!);
-
-    // It's more profitable to use `swapExactETHForTokens` for the frontrunner (until proven wrong)
-    router = router.connect(frontrunner);
-    await router.swapExactETHForTokens(
-      frontrunAmountOut.mul(99).div(100),
-      userPosition.path,
-      frontrunner.address,
-      deadline,
-      { value: frontrunAmountIn.mul(99).div(100) }
-    );
-
-    const sortedContractReserves2 = await getSortedContractReserves(uniPairClass, path);
-
-    const intermediaryPrice = sortedContractReserves2[1].mul(parseEther("1")).div(sortedContractReserves2[0]);
-    console.log("Price after Frontrunner tx: ", formatEther(intermediaryPrice));
-
     router = router.connect(swapper);
     await router.swapETHForExactTokens(
       userPosition.amountOut,
@@ -659,83 +559,96 @@ assertSwapTests && describe("Swap Eth To Tokens Via Router", function() {
       { value: userPosition.amountInMax }
     );
 
-    const sortedContractReserves3 = await getSortedContractReserves(uniPairClass, path);
-
-    const finalPrice = sortedContractReserves3[1].mul(parseEther("1")).div(sortedContractReserves3[0]);
-    console.log("Final price: ", formatEther(finalPrice));
+    const finalPrice = await getPriceFromContract(path);
 
     const precision = finalPrice.mul(parseEther("1")).div(targetPrice);
-    displayData && console.log("Precision: ", formatEther(precision));
 
     assert.ok(
-      precision.gt(parseEther("0.9984")) &&
-      precision.lt(parseEther("1.0015"))
+      precision.gt(parseEther("0.9954")) &&
+      precision.lt(parseEther("1.0055"))
     );
   });
-  
-  it("Calculate The Exact Unexpected Slippage For `swapExactETHForTokens` With Binary Search", async function() {
-    // const amountIn = parseEther("1");
-    // const amountOutMin = parseEther("1800");
-    const path: [string, string] = [weth.address, token0.address];
-    const uniPairClass = await deployNewPairClass();    
-    const sortedContractReserves = await getSortedContractReserves(uniPairClass, path);
-    const price = sortedContractReserves[1].mul(parseEther("1")).div(sortedContractReserves[0]);
-    const amountIn = wethAmounAddedToLiquidity.mul(1).div(100);
-    const amountOutMin = amountIn.mul(price).div(parseEther("1")).mul(100 - SLIPPAGE).div(100);
 
-    const userPosition: UserPositionExactETHForTokens = { 
-      amountIn: amountIn,
-      amountOutMin: amountOutMin,
-      path: path
-    };
+  it("Make A Profitable Frontrun with user using `swapETHforExactTokens`", async function() {
+    const initialFrontrunnerBalances = await frontrunner.getBalance();
 
-    const [frontrunAmountIn, frontrunAmountOut] = await getAmountsRespectingFullSlippageExactETHForTokens(
-      userPosition
-    );
+    const amountOut = token0AmountAddedToLiquidity.mul(1).div(100);
+    const userPosition = await getUserPositionETHForExactTokens(amountOut, SLIPPAGE);
 
-    const targetPrice = userPosition.amountOutMin.mul(parseEther("1")).div(userPosition.amountIn);
-    displayData && console.log("targetPrice", formatEther(targetPrice));
-
-    console.log("Initial Price: ", formatEther(price));
+    await frontrunETHForExactTokens(userPosition, frontrunner);
 
     const deadline = await getDeadline(deployer.provider!);
 
-    // It's more profitable to use `swapExactETHForTokens` for the frontrunner (until proven wrong)
-    router = router.connect(frontrunner);
-    await router.swapExactETHForTokens(
-      frontrunAmountOut.mul(99).div(100),
-      userPosition.path,
-      frontrunner.address,
-      deadline,
-      { value: frontrunAmountIn.mul(99).div(100) }
-    );
-
-    const sortedContractReserves2 = await getSortedContractReserves(uniPairClass, path);
-
-    const intermediaryPrice = sortedContractReserves2[1].mul(parseEther("1")).div(sortedContractReserves2[0]);
-    console.log("Price after Frontrunner tx: ", formatEther(intermediaryPrice));
-
     router = router.connect(swapper);
     await router.swapETHForExactTokens(
+      userPosition.amountOut,
+      userPosition.path,
+      swapper.address,
+      deadline,
+      { value: userPosition.amountInMax }
+    );
+
+    await backrun(frontrunner);
+
+    const finalFrontrunnerBalances = await frontrunner.getBalance();
+    const profits = finalFrontrunnerBalances.sub(initialFrontrunnerBalances);
+
+    assert.ok(profits.gt(0));
+  });
+
+  it("Make A Profitable Frontrun with user using `swapExactETHforTokens`", async function() {
+    const initialFrontrunnerBalances = await frontrunner.getBalance();
+
+    const amountIn = wethAmounAddedToLiquidity.mul(10).div(100);
+    const userPosition = await getUserPositionExactETHForTokens(amountIn, SLIPPAGE);
+
+    const deadline = await getDeadline(deployer.provider!);
+
+    await frontrunExactETHForTokens(userPosition, frontrunner);
+
+    router = router.connect(swapper);
+    await router.swapExactETHForTokens(
       userPosition.amountOutMin,
       userPosition.path,
-      frontrunner.address,
+      swapper.address,
       deadline,
       { value: userPosition.amountIn }
     );
 
-    const sortedContractReserves3 = await getSortedContractReserves(uniPairClass, path);
+    await backrun(frontrunner);
 
-    const finalPrice = sortedContractReserves3[1].mul(parseEther("1")).div(sortedContractReserves3[0]);
-    console.log("Final price: ", formatEther(finalPrice));
+    const finalFrontrunnerBalances = await frontrunner.getBalance();
+    const profits = finalFrontrunnerBalances.sub(initialFrontrunnerBalances);
 
-    const precision = finalPrice.mul(parseEther("1")).div(targetPrice);
-    displayData && console.log("Precision: ", formatEther(precision));
-
-    assert.ok(
-      precision.gt(parseEther("0.9984")) &&
-      precision.lt(parseEther("1.0015"))
-    );
+    assert.ok(profits.gt(0));
   });
+
+  // it("Calculate Gas Efficiently For A Whole Frontrun", async function() {
+    
+  //   const feeData = await deployer.provider!.getFeeData();
+  //   const amountIn = wethAmounAddedToLiquidity.mul(10).div(100);
+  //   const userPosition = await getUserPositionExactETHForTokens(amountIn, SLIPPAGE);
+
+  //   const buyGasEstimation = await estimateFrontrunGas(userPosition, frontrunner);
+  //   const buy_fee = await frontrunExactETHForTokens(userPosition, frontrunner);
+
+  //   const sellGasEstimation = await estimateBackrunGas(frontrunner);
+  //   const approveGasEstimation = await token0.estimateGas.approve(router.address, ethers.constants.MaxUint256);
+  //   const sell_fee = await backrun(frontrunner);
+
+  //   const amountGasPaid = buy_fee.add(sell_fee);
+  //   const finalGasEstimation =  (buyGasEstimation.add(approveGasEstimation).add(sellGasEstimation)).mul(feeData.gasPrice!);
+    
+  //   console.log("gasEstimation: ", finalGasEstimation);
+  //   console.log("amountGasPaid: ", amountGasPaid);
+    
+  // });
+
+  // it("Expected Slippage for both functions", async function() {
+  //   const userPositionETHForExactTokens = await getUserPositionETHForExactTokens(parseEther("1"), 10);
+  //   const UserPositionExactETHForTokens = await getUserPositionExactETHForTokens(parseEther("1"), 10);
+  // });
+
+  // it("Can say if a frontrun is profitable or not", async function() {});
   
 });
