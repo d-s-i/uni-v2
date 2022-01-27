@@ -18,6 +18,7 @@ import {
 describe("UniswapV2PairClass", function() {
 
   describe("SwapETHForExactTokens Function", function() {
+
     it("SwapETHForExactTokens From Class", async function() {
 
       const path: [string, string] = [weth.address, token0.address];
@@ -32,9 +33,11 @@ describe("UniswapV2PairClass", function() {
   
       assert.ok(finalTokenReserve.lt(initialTokenReserve));
     });
+
   });
 
   describe("SwapExactETHForTokens Function", function() {
+    
     it("SwapExactETHForTokens From Class", async function() {
       const reserves = await uniPair.getReserves();
   
@@ -50,9 +53,11 @@ describe("UniswapV2PairClass", function() {
       assert.ok(uniPairClass.token0Reserves.gt(contractToken0Reserves));
       assert.ok(uniPairClass.token1Reserves.lt(contractToken1Rerserves));
     });
+    
   });
 
   describe("SwapExactTokensForETH Function", function() {
+
     it("SwapExactTokensForETH From Class", async function() {
       
       const path: [string, string] = [token0.address, weth.address];
@@ -69,9 +74,11 @@ describe("UniswapV2PairClass", function() {
       assert.ok(classReserves[0].gt(initialContractReserves[0]));
       assert.ok(classReserves[1].lt(initialContractReserves[1]));
     });
+    
   });
 
   describe("SwapTokensForExactETH Function", function() {
+
     it("swapTokensForExactETH From Class", async function() {
 
       const path: [string, string] = [token0.address, weth.address];
@@ -86,8 +93,8 @@ describe("UniswapV2PairClass", function() {
       const finalTokenReserve = getClassTokenReserve(path, path[0]);
 
       assert.ok(finalTokenReserve.gt(initialTokenReserve));
-      
     });
+
   });
 
 });

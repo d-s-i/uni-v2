@@ -34,7 +34,7 @@ export const SwapETHForExactTokensLoopFromClass = function(
     return totalSwapAmount;
 }
 
-export const swapExactTokensForEthLoopFromClass = function(
+export const swapExactTokensForETHLoopFromClass = function(
     iterations: number,
     swapAmount: BigNumber
 ) {
@@ -51,7 +51,7 @@ export const swapExactTokensForEthLoopFromClass = function(
     return totalSwapAmount;
 }
 
-export const swapTokensForExactEthLoopFromClass = function(
+export const swapTokensForExactETHLoopFromClass = function(
     iterations: number,
     swapAmountOut: BigNumber
 ) {
@@ -81,13 +81,13 @@ export const swapTokensForExactETHLoopFromContract = async function(
     return totalSwapFees;
 }
 
-export const swapExactEthForTokensLoopFromContract = async function(
+export const swapExactETHForTokensLoopFromContract = async function(
     iterations: number,
     swapArgs: { signer: SignerWithAddress, swapAmount: BigNumber }
 ) {
     let swapFees: BigNumber[] = [];
     for(let i = 0; i < iterations; i++) {
-        const swap_fees = await swapExactEthForTokensFromContract(swapArgs.swapAmount, token0.address, swapArgs.signer);
+        const swap_fees = await swapExactETHForTokensFromContract(swapArgs.swapAmount, swapArgs.signer);
         swapFees.push(swap_fees);
     }
 
@@ -116,9 +116,8 @@ export const swapETHForExactTokensLoopFromContract = async function(
     return totalSwapFees;
 }
 
-export const swapExactEthForTokensFromContract = async function(
-    value: BigNumber,
-    tokenAddress: string,
+export const swapExactETHForTokensFromContract = async function(
+    exactAmountIn: BigNumber,
     signer: SignerWithAddress
 ) {
     const tempRouter = router.connect(signer);
@@ -126,16 +125,16 @@ export const swapExactEthForTokensFromContract = async function(
 
     const swap_tx = await tempRouter.swapExactETHForTokens(
       1, 
-      [weth.address, tokenAddress], 
+      [weth.address, token0.address], 
       signer.address, 
       deadline,
-      { value: value }
+      { value: exactAmountIn }
     );
 
     return calcGasFeesOfTx(swap_tx.hash);
 }
 
-export const swapExactTokensForEthFromContract = async function(
+export const swapExactTokensForETHFromContract = async function(
     signer: SignerWithAddress,
     swapAmount: BigNumber
 ) {
@@ -195,7 +194,7 @@ export const swapTokensForExactETHFromContract = async function(
 
 export const swapETHForExactTokensFromContract = async function(
     amountOut: BigNumber,
-    amountIn: BigNumber,
+    amountInMax: BigNumber,
     signer: SignerWithAddress,
 ) {
 
@@ -207,18 +206,18 @@ export const swapETHForExactTokensFromContract = async function(
         [weth.address, token0.address],
         signer.address,
         deadline,
-        { value: amountIn }
+        { value: amountInMax }
     );
     return calcGasFeesOfTx(swap_tx.hash);
 }
 
-export const swapExactTokensForEthLoopFromContract = async function(
+export const swapExactTokensForETHLoopFromContract = async function(
     iterations: number,
     swapArgs: { signer: SignerWithAddress, swapAmount: BigNumber }
 ) {
     let swapFees: BigNumber[] = [];
     for(let i = 0; i < iterations; i++) {
-        const swap_fees = await swapExactTokensForEthFromContract(swapArgs.signer, swapArgs.swapAmount);
+        const swap_fees = await swapExactTokensForETHFromContract(swapArgs.signer, swapArgs.swapAmount);
         swapFees.push(swap_fees);
     }
 

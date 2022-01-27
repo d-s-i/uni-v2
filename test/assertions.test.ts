@@ -1,8 +1,7 @@
 import assert from "assert";
 import { BigNumber } from "ethers";
-import { formatEther } from "ethers/lib/utils";
-import { UniswapV2PairClass } from "./UniV2PairClass.test";
-import { uniPair } from "./index.test";
+import { UniswapV2PairClass } from "../src/UniswapV2PairClass";
+import { uniPair, uniPairClass } from "./index.test";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 export const assertAddressExist = function(address: string) {
@@ -10,16 +9,6 @@ export const assertAddressExist = function(address: string) {
         typeof(address) !== "undefined" &&
         address.substring(0, 2) === "0x"
       );
-}
-
-export const assertReservesAreEquals = function(
-  contractReserves: [BigNumber, BigNumber],
-  uniPairClass: UniswapV2PairClass
-) {
-  assert.ok(contractReserves[1].eq(uniPairClass.token1Reserves));
-  assert.ok(contractReserves[0].eq(uniPairClass.token0Reserves));
-  assert.ok(contractReserves[0].eq(uniPairClass.reserves[0]));
-  assert.ok(contractReserves[1].eq(uniPairClass.reserves[1]));
 }
 
 export const assertStrictEqualityToTheNearestHundredth = function(num1: BigNumber, num2: BigNumber) {
@@ -56,3 +45,10 @@ export const assertClassAndContractReservesAreStrictEqual = function(
   assert.ok(reservesAfterContractSwap[0].eq(uniPairClass.reserves[0]));
   assert.ok(reservesAfterContractSwap[1].eq(uniPairClass.reserves[1]));
 }
+
+export const assertPoint15PercentPrecision = function(precision: BigNumber) {
+  assert.ok(
+    precision.gt(precision.mul(9995).div(10000)) &&
+    precision.lt(precision.mul(10015).div(10000))
+  ); 
+} 

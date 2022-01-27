@@ -1,12 +1,11 @@
 import hre from "hardhat";
-import { BigNumber, ethers, Signer } from "ethers";
-import { parseEther, hexValue, formatEther, parseUnits } from "ethers/lib/utils";
-import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
+import { BigNumber } from "ethers";
+import { parseEther, hexValue, formatEther } from "ethers/lib/utils";
 import { Provider } from "@ethersproject/abstract-provider";
 
 import { UserPositionETHForExactTokens, UserPositionExactETHForTokens } from "../types.test";
-import { router, weth, token0, uniPair, deployer, uniPairClass } from "../index.test";
-import { UniswapV2PairClass } from "../UniV2PairClass.test";
+import { weth, token0, uniPair, deployer, uniPairClass } from "../index.test";
+import { UniswapV2PairClass } from "../../src/UniswapV2PairClass";
 
 export const deployNewPairClass = async function() {
     const reserves = await uniPair.getReserves();

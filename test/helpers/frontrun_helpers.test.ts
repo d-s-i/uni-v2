@@ -1,13 +1,11 @@
-import hre from "hardhat";
-import { BigNumber, ethers, Signer } from "ethers";
-import { parseEther, hexValue, formatEther, parseUnits } from "ethers/lib/utils";
+import { BigNumber, ethers } from "ethers";
+import { parseEther, formatEther } from "ethers/lib/utils";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
-import { Provider } from "@ethersproject/abstract-provider";
 
 import { UserPositionETHForExactTokens, UserPositionExactETHForTokens } from "../types.test";
-import { router, weth, token0, uniPair, deployer, uniPairClass } from "../index.test";
-import { UniswapV2PairClass } from "../UniV2PairClass.test";
+import { router, weth, token0, deployer, uniPairClass, frontrunner } from "../index.test";
 import { getDeadline, calcGasFeesOfTx, deployNewPairClass } from "./helpers.test";
+import { swapETHForExactTokensFromContract, swapExactETHForTokensFromContract } from "./swap_helpers.test";
 
 export const getFrontrunTargetPrice = function(
     userPosition: UserPositionExactETHForTokens | UserPositionETHForExactTokens
@@ -19,6 +17,85 @@ export const getFrontrunTargetPrice = function(
     }
 }
 
+export const calcSandwichProfitsETHForExactTokens = async function(
+    userPosition: UserPositionETHForExactTokens
+) {
+    const [frontrunMaxAmountIn, frontrunMaxAmountOutMin] = await getAmountsRespectingFullSlippageETHForExactTokens(userPosition);
+    const frontrunAmountIn = frontrunMaxAmountIn.mul(99).div(100);
+    const frontrunAmountOutMin = frontrunMaxAmountOutMin.mul(99).div(100);
+    const simulatedPair = await deployNewPairClass();
+
+    const buyGasEstimation = await estimateFrontrunGas(userPosition, frontrunner);
+    const [,swappedTokenAmount] = simulatedPair.simulateSwapExactETHForTokens(
+        frontrunAmountIn, 
+        frontrunAmountOutMin, 
+        userPosition.path
+    );
+    simulatedPair.simulateSwapETHForExactTokens(userPosition.amountOut, userPosition.path);
+    
+    const frontrunSellPath = [userPosition.path[1], userPosition.path[0]];
+    const [,ETHAmountOutMin] = uniPairClass.getAmountsOut(swappedTokenAmount, frontrunSellPath);
+    const [,swapETHAmount] = simulatedPair.simulateSwapExactTokensForEth(swappedTokenAmount, ETHAmountOutMin, frontrunSellPath);
+    
+    // assume same gas price for frontrun and backrun
+    const feeData = await deployer.provider!.getFeeData();
+    const estimatedSandwichFees = buyGasEstimation.mul(2).mul(feeData.gasPrice!);
+    const profits = swapETHAmount.sub(frontrunAmountIn).sub(estimatedSandwichFees);
+    return profits;
+}
+
+export const calcSandwichProfitsExactETHForTokens = async function(
+    userPosition: UserPositionExactETHForTokens
+) {
+    const [frontrunMaxAmountIn, frontrunMaxAmountOut] = await getAmountsRespectingFullSlippageExactETHForTokens(userPosition);
+    const frontrunAmountIn = frontrunMaxAmountIn.mul(99).div(100);
+    const frontrunAmountOutMin = frontrunMaxAmountOut.mul(99).div(100);
+    const simulatedPair = await deployNewPairClass();
+
+    const buyGasEstimation = await estimateFrontrunGas(userPosition, frontrunner);
+    const [,swappedTokenAmount] = simulatedPair.simulateSwapExactETHForTokens(
+        frontrunAmountIn, 
+        frontrunAmountOutMin, 
+        userPosition.path
+    );
+
+    simulatedPair.simulateSwapExactETHForTokens(userPosition.amountIn, userPosition.amountOutMin, userPosition.path);
+
+    const frontrunSellPath = [userPosition.path[1], userPosition.path[0]];
+    const [,ETHAmountOutMin] = uniPairClass.getAmountsOut(swappedTokenAmount, frontrunSellPath);
+    const [,swapETHAmount] = simulatedPair.simulateSwapExactTokensForEth(swappedTokenAmount, ETHAmountOutMin, frontrunSellPath);
+
+    // assume same gas price for frontrun and backrun
+    const feeData = await deployer.provider!.getFeeData();
+    const estimatedSandwichFees = buyGasEstimation.mul(2).mul(feeData.gasPrice!);
+    const profits = swapETHAmount.sub(frontrunAmountIn).sub(estimatedSandwichFees);
+    return profits;
+}
+
+export const simulateSandwichExactETHForTokens = async function(
+    userPosition: UserPositionExactETHForTokens,
+    signers: { user: SignerWithAddress, frontrunner: SignerWithAddress }
+) {
+    const frontrun_fee = await frontrunExactETHForTokens(userPosition, signers.frontrunner);
+
+    await swapExactETHForTokensFromContract(userPosition.amountIn, signers.user);
+
+    const backrun_fee = await backrun(frontrunner);
+    return frontrun_fee.add(backrun_fee);
+}
+
+export const simulateSandwichETHForExactTokens = async function(
+    userPosition: UserPositionETHForExactTokens,
+    signers: { user: SignerWithAddress, frontrunner: SignerWithAddress }
+) {
+    const frontrun_fee = await frontrunETHForExactTokens(userPosition, signers.frontrunner);
+
+    await swapETHForExactTokensFromContract(userPosition.amountOut, userPosition.amountInMax, signers.user);
+
+    const backrun_fee = await backrun(frontrunner);
+    return frontrun_fee.add(backrun_fee);
+}
+
 export const frontrunETHForExactTokens = async function(
     userPosition: UserPositionETHForExactTokens,
     signer: SignerWithAddress
@@ -28,16 +105,18 @@ export const frontrunETHForExactTokens = async function(
     );
 
     const deadline = await getDeadline(deployer.provider!);
-
     // It's more profitable to use `swapExactETHForTokens` for the frontrunner (until proven wrong)
     const tempRouter = router.connect(signer);
-    await tempRouter.swapExactETHForTokens(
+    const buy_tx = await tempRouter.swapExactETHForTokens(
     frontrunAmountOut.mul(99).div(100),
     userPosition.path,
     signer.address,
     deadline,
     { value: frontrunAmountIn.mul(99).div(100) }
     );
+
+    const feePaid = await calcGasFeesOfTx(buy_tx.hash);
+    return feePaid;
 }
 
 export const frontrunExactETHForTokens = async function(
@@ -112,7 +191,7 @@ export const simulateFrontrunWithMaxSlippage = async function(
 
     const swapInGas = await estimateFrontrunGas(userPosition, frontrun.signer);
 
-    const userSwapAmounts = uniPairClass.simulateSwapExactETHForTokens(
+    uniPairClass.simulateSwapExactETHForTokens(
         userAmountIn,
         userAmountOut,
         [weth.address, token0.address]
@@ -282,7 +361,7 @@ export const getAmountsRespectingFullSlippageExactETHForTokens = async function(
     );
 }
 
-const getTotalSlippageExactETHForTokens = async function(
+export const getTotalSlippageExactETHForTokens = async function(
     userPosition: UserPositionExactETHForTokens
 ) {
     const uniPairClass = await deployNewPairClass();
@@ -291,16 +370,16 @@ const getTotalSlippageExactETHForTokens = async function(
         userPosition.amountIn, 
         userPosition.amountOutMin, 
         userPosition.path
-    );
+    );  
     const expectedUserSlippage = uniPairClass.getExpectedSlippageExactETHForTokens(
         userPosition.amountIn, 
         userPosition.amountOutMin, 
         userPosition.path
-    );
+    );  
     const totalSlippage = unexpectedUserSlippage.sub(expectedUserSlippage).add(parseEther("1"));
     return totalSlippage;
 }
-const getTotalSlippageETHForExactTokens = async function(
+export const getTotalSlippageETHForExactTokens = async function(
     userPosition: UserPositionETHForExactTokens
 ) {
     const uniPairClass = await deployNewPairClass();

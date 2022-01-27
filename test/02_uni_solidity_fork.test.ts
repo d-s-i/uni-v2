@@ -5,8 +5,8 @@ import { BigNumber } from "ethers";
 import {
   swapTokensForExactETHFromContract,
   swapETHForExactTokensFromContract,
-  swapExactEthForTokensFromContract, 
-  swapExactTokensForEthFromContract,
+  swapExactETHForTokensFromContract, 
+  swapExactTokensForETHFromContract,
 } from "./helpers/swap_helpers.test";
 
 import { 
@@ -17,7 +17,9 @@ import {
 } from "./index.test";
 
 describe("UniswapV2 Contracts", function() {
+  
   describe("SwapETHForExactTokens Function", function() {
+  
     it("SwapETHForExactTokens", async function() {
       const initBalance = await token0.balanceOf(swapper.address);
 
@@ -27,15 +29,19 @@ describe("UniswapV2 Contracts", function() {
   
       assert.ok(initBalance.lt(finBalance));
     });
+
   });
+ 
   describe("SwapExactETHForTokens Function", function() {
+ 
     it("SwapExactETHForTokens", async function() {
-      await swapExactEthForTokensFromContract(ETH_SWAP_AMOUNT, token0.address, swapper);
+      await swapExactETHForTokensFromContract(ETH_SWAP_AMOUNT, swapper);
 
       const finalBalance = await token0.balanceOf(swapper.address);
   
       assert.ok(finalBalance.gt(0));
     });
+
   });
   describe("SwapTokensForExactETH Function", function() {
     it("SwapTokensForExactETH", async function() {
@@ -49,16 +55,21 @@ describe("UniswapV2 Contracts", function() {
   
       assert.ok(finBalance.sub(initBalance).add(fees_spent).eq(amountOut));
     });
+    
   });
+  
   describe("SwapExactTokensForETH Function", function() {
+    
     it("SwapExactTokensForETH", async function() {
       const initialBalance = await swapper.getBalance();
 
-      await swapExactTokensForEthFromContract(swapper, TOKEN_SWAP_AMOUNT);
+      await swapExactTokensForETHFromContract(swapper, TOKEN_SWAP_AMOUNT);
    
       const finalBalance = await swapper.getBalance();
   
       assert.ok(initialBalance.lt(finalBalance));
     });
+
   });
+
 });

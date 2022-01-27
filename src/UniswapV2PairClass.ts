@@ -1,5 +1,5 @@
 import { BigNumber } from "ethers";
-import { formatEther, parseEther } from "ethers/lib/utils";
+import { parseEther } from "ethers/lib/utils";
 
 export class UniswapV2PairClass {
     private _token0Reserves: BigNumber;

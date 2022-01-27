@@ -4,7 +4,6 @@ import { assertAddressExist } from "./assertions.test";
 import { token0, weth, factory, router, uniPair, token0AmountAddedToLiquidity, wethAmounAddedToLiquidity } from "./index.test";
 
 describe("Deployments", function () {
-
     it("Deployed The Tokens", async function() {
       assertAddressExist(token0.address);
       assertAddressExist(weth.address);

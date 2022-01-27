@@ -6,10 +6,10 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { 
   resetEthBalances,
   deployNewPairClass, 
-  getDeadline, 
+  getDeadline
 } from "./helpers/helpers.test";
 
-import { UniswapV2PairClass } from "./UniV2PairClass.test";
+import { UniswapV2PairClass } from "../src/UniswapV2PairClass";
 
 export let deployer: SignerWithAddress;
 export let recolter: SignerWithAddress;
