@@ -15,8 +15,7 @@ export const deployNewPairClass = async function() {
     return new UniswapV2PairClass(
         [weth.address, token0.address], 
         weth.address, 
-        contractToken0Reserves,
-        contractToken1Rerserves
+        [contractToken0Reserves, contractToken1Rerserves]
     );
 }
 

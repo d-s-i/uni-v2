@@ -12,8 +12,7 @@ export class UniswapV2PairClass<T extends TokenIdentifier> {
     constructor(
         pairArray: [token0Address: T, token1Address: T],
         wethAddress: T,
-        reserve0: bigint, 
-        reserve1: bigint, 
+        [reserve0, reserve1]: [bigint, bigint],
     ) {
         const pair = UniswapV2PairClass.sortTokens(pairArray[0], pairArray[1]);
 
@@ -85,8 +84,7 @@ export class UniswapV2PairClass<T extends TokenIdentifier> {
         const tempUniPairClass = new UniswapV2PairClass(
             path,
             path[0],
-            this.token0Reserves,
-            this.token1Reserves,
+            [this.token0Reserves, this.token1Reserves]
         );
 
         const initialSortedReserves = tempUniPairClass.getSortedReserves(path);
@@ -111,8 +109,7 @@ export class UniswapV2PairClass<T extends TokenIdentifier> {
         const tempUniPairClass = new UniswapV2PairClass(
             path,
             path[0],
-            this.token0Reserves,
-            this.token1Reserves,
+            [this.token0Reserves, this.token1Reserves],
         );
 
         const initialSortedReserves = tempUniPairClass.getSortedReserves(path);
