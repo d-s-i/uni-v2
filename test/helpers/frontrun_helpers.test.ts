@@ -1,6 +1,8 @@
-import { BigNumber, ethers } from "ethers";
+import { ethers } from "ethers";
 import { parseEther, formatEther } from "ethers/lib/utils";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
+
+import { ONE_ETHER } from "../../src/constants";
 
 import { UserPositionETHForExactTokens, UserPositionExactETHForTokens } from "../types.test";
 import { router, weth, token0, deployer, uniPairClass, frontrunner } from "../index.test";
@@ -11,9 +13,9 @@ export const getFrontrunTargetPrice = function(
     userPosition: UserPositionExactETHForTokens | UserPositionETHForExactTokens
 ) {
     if("amountOutMin" in userPosition) {
-        return userPosition.amountOutMin.mul(parseEther("1")).div(userPosition.amountIn);
+        return userPosition.amountOutMin * ONE_ETHER  / userPosition.amountIn;
     } else {
-        return userPosition.amountOut.mul(parseEther("1")).div(userPosition.amountInMax);
+        return userPosition.amountOut * ONE_ETHER  / userPosition.amountInMax;
     }
 }
 
@@ -21,8 +23,8 @@ export const calcSandwichProfitsETHForExactTokens = async function(
     userPosition: UserPositionETHForExactTokens
 ) {
     const [frontrunMaxAmountIn, frontrunMaxAmountOutMin] = await getAmountsRespectingFullSlippageETHForExactTokens(userPosition);
-    const frontrunAmountIn = frontrunMaxAmountIn.mul(99).div(100);
-    const frontrunAmountOutMin = frontrunMaxAmountOutMin.mul(99).div(100);
+    const frontrunAmountIn = frontrunMaxAmountIn * 99n / 100n;
+    const frontrunAmountOutMin = frontrunMaxAmountOutMin * 99n / 100n;
     const simulatedPair = await deployNewPairClass();
 
     const buyGasEstimation = await estimateFrontrunGas(userPosition, frontrunner);
@@ -40,7 +42,7 @@ export const calcSandwichProfitsETHForExactTokens = async function(
     // assume same gas price for frontrun and backrun
     const feeData = await deployer.provider!.getFeeData();
     const estimatedSandwichFees = buyGasEstimation.mul(2).mul(feeData.gasPrice!);
-    const profits = swapETHAmount.sub(frontrunAmountIn).sub(estimatedSandwichFees);
+    const profits = swapETHAmount - frontrunAmountIn - BigInt(estimatedSandwichFees.toHexString());
     return profits;
 }
 
@@ -48,8 +50,8 @@ export const calcSandwichProfitsExactETHForTokens = async function(
     userPosition: UserPositionExactETHForTokens
 ) {
     const [frontrunMaxAmountIn, frontrunMaxAmountOut] = await getAmountsRespectingFullSlippageExactETHForTokens(userPosition);
-    const frontrunAmountIn = frontrunMaxAmountIn.mul(99).div(100);
-    const frontrunAmountOutMin = frontrunMaxAmountOut.mul(99).div(100);
+    const frontrunAmountIn = frontrunMaxAmountIn * 99n / 100n;
+    const frontrunAmountOutMin = frontrunMaxAmountOut * 99n / 100n;
     const simulatedPair = await deployNewPairClass();
 
     const buyGasEstimation = await estimateFrontrunGas(userPosition, frontrunner);
@@ -68,7 +70,7 @@ export const calcSandwichProfitsExactETHForTokens = async function(
     // assume same gas price for frontrun and backrun
     const feeData = await deployer.provider!.getFeeData();
     const estimatedSandwichFees = buyGasEstimation.mul(2).mul(feeData.gasPrice!);
-    const profits = swapETHAmount.sub(frontrunAmountIn).sub(estimatedSandwichFees);
+    const profits = swapETHAmount - frontrunAmountIn - BigInt(estimatedSandwichFees.toHexString());
     return profits;
 }
 
@@ -81,7 +83,7 @@ export const simulateSandwichExactETHForTokens = async function(
     await swapExactETHForTokensFromContract(userPosition.amountIn, signers.user);
 
     const backrun_fee = await backrun(frontrunner);
-    return frontrun_fee.add(backrun_fee);
+    return frontrun_fee + backrun_fee;
 }
 
 export const simulateSandwichETHForExactTokens = async function(
@@ -93,7 +95,7 @@ export const simulateSandwichETHForExactTokens = async function(
     await swapETHForExactTokensFromContract(userPosition.amountOut, userPosition.amountInMax, signers.user);
 
     const backrun_fee = await backrun(frontrunner);
-    return frontrun_fee.add(backrun_fee);
+    return frontrun_fee + backrun_fee;
 }
 
 export const frontrunETHForExactTokens = async function(
@@ -108,11 +110,11 @@ export const frontrunETHForExactTokens = async function(
     // It's more profitable to use `swapExactETHForTokens` for the frontrunner (until proven wrong)
     const tempRouter = router.connect(signer);
     const buy_tx = await tempRouter.swapExactETHForTokens(
-    frontrunAmountOut.mul(99).div(100),
+    (frontrunAmountOut * 99n) / 100n,
     userPosition.path,
     signer.address,
     deadline,
-    { value: frontrunAmountIn.mul(99).div(100) }
+    { value: (frontrunAmountIn * 99n) / 100n }
     );
 
     const feePaid = await calcGasFeesOfTx(buy_tx.hash);
@@ -131,11 +133,11 @@ export const frontrunExactETHForTokens = async function(
 
     const tempRouter = router.connect(signer);
     const buy_tx = await tempRouter.swapExactETHForTokens(
-      frontrunAmountOut.mul(99).div(100),
+      (frontrunAmountOut * 99n) / 100n,
       userPosition.path,
       signer.address,
       deadline,
-      { value: frontrunAmountIn.mul(99).div(100) }
+      { value: (frontrunAmountIn * 99n) / 100n }
     );
     const feePaid = await calcGasFeesOfTx(buy_tx.hash);
     return feePaid;
@@ -164,11 +166,11 @@ export const backrun = async function(signer: SignerWithAddress) {
     const approveFee = await calcGasFeesOfTx(approve_tx.hash);
     const sellFee = await calcGasFeesOfTx(sell_tx.hash);
 
-    return approveFee.add(sellFee);
+    return approveFee + sellFee;
 }
 
 export const simulateFrontrunWithMaxSlippage = async function(
-    frontrun: { initialSwapAmount: BigNumber, signer: SignerWithAddress },
+    frontrun: { initialSwapAmount: bigint, signer: SignerWithAddress },
     userPosition: UserPositionExactETHForTokens | UserPositionETHForExactTokens
 ) {
 
@@ -185,7 +187,7 @@ export const simulateFrontrunWithMaxSlippage = async function(
 
     const frontrunInSwapAmounts = uniPairClass.simulateSwapExactETHForTokens(
         frontrun.initialSwapAmount,
-        BigNumber.from("1"),
+        1n,
         [weth.address, token0.address]
     );
 
@@ -199,7 +201,7 @@ export const simulateFrontrunWithMaxSlippage = async function(
 
     const frontrunOutSwapAmounts = uniPairClass.simulateSwapExactTokensForEth(
         frontrunInSwapAmounts[1],
-        BigNumber.from("1"),
+        1n,
         [token0.address, weth.address]
     );
 
@@ -207,8 +209,8 @@ export const simulateFrontrunWithMaxSlippage = async function(
 
     const feeData = await deployer.provider!.getFeeData();
 
-    const feePaid = swapInGas.add(swapOutGas).mul(feeData.gasPrice!);
-    const profits = frontrunOutSwapAmounts[1].sub(frontrun.initialSwapAmount).sub(feePaid);
+    const feePaid = BigInt(swapInGas.add(swapOutGas).mul(feeData.gasPrice!).toHexString());
+    const profits = frontrunOutSwapAmounts[1] - frontrun.initialSwapAmount - feePaid;
     
     return profits;
 }
@@ -233,11 +235,11 @@ export const estimateFrontrunGas = async function(
     
     const tempRouter = router.connect(signer);
     const buyGasEstimation = await tempRouter.estimateGas.swapExactETHForTokens(
-        frontrunAmountOut.mul(99).div(100),
+        (frontrunAmountOut * 99n) / 100n,
         userPosition.path,
         signer.address,
         deadline,
-        { value: frontrunAmountIn.mul(99).div(100) }
+        { value: (frontrunAmountIn * 99n) / 100n }
     );
 
     return buyGasEstimation;
@@ -376,7 +378,7 @@ export const getTotalSlippageExactETHForTokens = async function(
         userPosition.amountOutMin, 
         userPosition.path
     );  
-    const totalSlippage = unexpectedUserSlippage.sub(expectedUserSlippage).add(parseEther("1"));
+    const totalSlippage = unexpectedUserSlippage - expectedUserSlippage + ONE_ETHER;
     return totalSlippage;
 }
 export const getTotalSlippageETHForExactTokens = async function(
@@ -390,16 +392,16 @@ export const getTotalSlippageETHForExactTokens = async function(
         userPosition.path
     );
     const expectedUserSlippage = uniPairClass.getExpectedSlippageETHForExactTokens(userPosition.amountOut, userPosition.path);
-    const totalSlippage = unexpectedUserSlippage.sub(expectedUserSlippage).add(parseEther("1"));
+    const totalSlippage = unexpectedUserSlippage - expectedUserSlippage + ONE_ETHER;
     return totalSlippage;
 }
 
 const getFrontrunMaxValues = function(
-    totalUserSlippage: BigNumber,
+    totalUserSlippage: bigint,
     path: [string, string]
 ) {
     const [reservesIn] = uniPairClass.getSortedReserves(path);
-    const frontrunMaxAmountIn = (reservesIn.mul(totalUserSlippage.sub(parseEther("1")))).div(parseEther("1")).div(2);
+    const frontrunMaxAmountIn = ((reservesIn * (totalUserSlippage - ONE_ETHER)) / ONE_ETHER) / 2n;
     const [, frontrunMaxAmountOutMin] = uniPairClass.getAmountsOut(frontrunMaxAmountIn, path);
 
     const highBoundFrontrunSlippage = uniPairClass.getExpectedSlippageExactETHForTokens(
@@ -412,11 +414,11 @@ const getFrontrunMaxValues = function(
 }
 
 const getFrontrunMinValues = function(
-    maxValues: { frontrunMaxAmountIn: BigNumber, highBoundFrontrunSlippage: BigNumber },
+    maxValues: { frontrunMaxAmountIn: bigint, highBoundFrontrunSlippage: bigint },
     path: [string, string]
 ) {
-    const invertedSlippage = parseEther("1").mul(parseEther("1")).div(maxValues.highBoundFrontrunSlippage);
-    const frontrunMinAmountIn = maxValues.frontrunMaxAmountIn.mul(invertedSlippage).div(parseEther("1"));
+    const invertedSlippage = (ONE_ETHER * ONE_ETHER) / (maxValues.highBoundFrontrunSlippage);
+    const frontrunMinAmountIn = (maxValues.frontrunMaxAmountIn * invertedSlippage) / ONE_ETHER;
     const [,frontrunMinAmountOutMin] = uniPairClass.getAmountsOut(frontrunMinAmountIn, path);
 
     const lowBoundFrontrunSlippage = uniPairClass.getExpectedSlippageExactETHForTokens(
@@ -429,9 +431,9 @@ const getFrontrunMinValues = function(
 }
 
 const getFrontrunAmountsFromSlippageBinarySearch = function(
-    lowBoundValues: { frontrunMinAmountIn: BigNumber, frontrunMinAmountOutMin: BigNumber, lowBoundFrontrunSlippage: BigNumber },
-    highBoundValues: { frontrunMaxAmountIn: BigNumber },
-    userValues: { userSlippage: BigNumber, path: [string, string] }
+    lowBoundValues: { frontrunMinAmountIn: bigint, frontrunMinAmountOutMin: bigint, lowBoundFrontrunSlippage: bigint },
+    highBoundValues: { frontrunMaxAmountIn: bigint },
+    userValues: { userSlippage: bigint, path: [string, string] }
 ) {
     let [
         frontrunAmountIn, 
@@ -442,17 +444,17 @@ const getFrontrunAmountsFromSlippageBinarySearch = function(
         lowBoundValues.frontrunMinAmountOutMin, 
         lowBoundValues.lowBoundFrontrunSlippage
     ];
-    let prevFrontrunAmountIn = BigNumber.from(0);
-    let amountsDidChange = !(prevFrontrunAmountIn.eq(frontrunAmountIn));
-    while(!createdSlippage.eq(userValues.userSlippage) && amountsDidChange) {
+    let prevFrontrunAmountIn = BigInt(0);
+    let amountsDidChange = prevFrontrunAmountIn !== frontrunAmountIn;
+    while(createdSlippage !== userValues.userSlippage && amountsDidChange) {
 
         prevFrontrunAmountIn = frontrunAmountIn;
-        if(createdSlippage.lt(userValues.userSlippage)) {
+        if(createdSlippage < userValues.userSlippage) {
             lowBoundValues.frontrunMinAmountIn = frontrunAmountIn;
-            frontrunAmountIn = (lowBoundValues.frontrunMinAmountIn.add(highBoundValues.frontrunMaxAmountIn)).div(2);
+            frontrunAmountIn = (lowBoundValues.frontrunMinAmountIn + highBoundValues.frontrunMaxAmountIn) / 2n;
         } else {
             highBoundValues.frontrunMaxAmountIn = frontrunAmountIn;
-            frontrunAmountIn = (lowBoundValues.frontrunMinAmountIn.add(highBoundValues.frontrunMaxAmountIn)).div(2);
+            frontrunAmountIn = (lowBoundValues.frontrunMinAmountIn + highBoundValues.frontrunMaxAmountIn)  / 2n;
         }
 
         [,frontrunAmountOut] = uniPairClass.getAmountsOut(frontrunAmountIn, userValues.path);
@@ -462,7 +464,7 @@ const getFrontrunAmountsFromSlippageBinarySearch = function(
             frontrunAmountOut,
             userValues.path
         );
-        amountsDidChange = !(prevFrontrunAmountIn.eq(frontrunAmountIn));
+        amountsDidChange = prevFrontrunAmountIn !== frontrunAmountIn;
     }
 
     return [frontrunAmountIn, frontrunAmountOut];

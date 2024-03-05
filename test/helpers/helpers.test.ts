@@ -1,5 +1,4 @@
 import hre from "hardhat";
-import { BigNumber } from "ethers";
 import { parseEther, hexValue, formatEther } from "ethers/lib/utils";
 import { Provider } from "@ethersproject/abstract-provider";
 
@@ -10,18 +9,18 @@ import { UniswapV2PairClass } from "../../src/UniswapV2PairClass";
 export const deployNewPairClass = async function() {
     const reserves = await uniPair.getReserves();
 
-    const contractToken0Reserves = reserves[0];
-    const contractToken1Rerserves = reserves[1];
+    const contractToken0Reserves = BigInt(reserves[0].toHexString());
+    const contractToken1Rerserves = BigInt(reserves[1].toHexString());
 
     return new UniswapV2PairClass(
         [weth.address, token0.address], 
         weth.address, 
-        contractToken0Reserves, 
+        contractToken0Reserves,
         contractToken1Rerserves
     );
 }
 
-export const resetEthBalances = async function(addresses: string[], value: BigNumber) {
+export const resetEthBalances = async function(addresses: string[], value: bigint) {
     for(const i of addresses) {
         await hre.network.provider.send("hardhat_setBalance", [
             i,
@@ -45,12 +44,12 @@ export const getPriceFromContract = async function(
 }
 
 export const getUserPositionETHForExactTokens = async function(
-    amountOut: BigNumber,
+    amountOut: bigint,
     slippage: number
 ) {
     const path: [string, string] = [weth.address, token0.address];
     const [amountInBeforeSlipage] = uniPairClass.getAmountsIn(amountOut, path);
-    const amountInMax = amountInBeforeSlipage.mul(100 + slippage).div(100);
+    const amountInMax = amountInBeforeSlipage * BigInt(100 + slippage) / 100n;
     const userPosition: UserPositionETHForExactTokens = { 
       amountInMax: amountInMax,
       amountOut: amountOut,
@@ -60,12 +59,12 @@ export const getUserPositionETHForExactTokens = async function(
 }
 
 export const getUserPositionExactETHForTokens = async function(
-    amountIn: BigNumber,
+    amountIn: bigint,
     slippage: number
 ) {
     const path: [string, string] = [weth.address, token0.address];
     const [,amountOutBeforeSlipage] = uniPairClass.getAmountsOut(amountIn, path);
-    const amountOutMin = amountOutBeforeSlipage.mul(100 - slippage).div(100);
+    const amountOutMin = amountOutBeforeSlipage * BigInt(100 - slippage) / 100n;
 
     const userPosition: UserPositionExactETHForTokens = { 
       amountIn: amountIn,
@@ -79,8 +78,8 @@ export const getUserPositionExactETHForTokens = async function(
 export const calcGasFeesOfTx = async function(hash: string) {
     const receipt = await deployer.provider!.getTransactionReceipt(hash);
     const gasUsed = receipt.gasUsed;
-    const gasPrice = receipt.effectiveGasPrice;
-    const gasFees = gasPrice.mul(gasUsed);
+    const gasPrice = BigInt(receipt.effectiveGasPrice.toHexString());
+    const gasFees = gasPrice * BigInt(gasUsed.toHexString());
     return gasFees;
 }
 
@@ -90,7 +89,7 @@ export const getClassTokenReserve = function(
 ) {
     const initialReserves = uniPairClass.getSortedReserves(path);
     const sortedReserves = uniPairClass.getSortedReserves(path);
-    const sortedTokens = uniPairClass.sortTokens(path[0], path[1]);
+    const sortedTokens = UniswapV2PairClass.sortTokens(path[0], path[1]);
     if(path[0] === sortedTokens[0] && path[0] === tokenAddress) {
       return sortedReserves[0];
     } else {
@@ -102,7 +101,7 @@ export const getSortedContractReserves = async function(
     path: [string, string]
 ) {
     const contractReserves = await uniPair.getReserves();
-    const sortedTokens = uniPairClass.sortTokens(path[0], path[1]);
+    const sortedTokens = UniswapV2PairClass.sortTokens(path[0], path[1]);
     if(sortedTokens[0] === path[0]) {
         return contractReserves;
       } else {

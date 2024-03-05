@@ -1,13 +1,11 @@
-import { BigNumber } from "ethers";
-
 export interface UserPositionExactETHForTokens {
-    amountIn: BigNumber,
-    amountOutMin: BigNumber,
+    amountIn: bigint,
+    amountOutMin: bigint,
     path: [string, string] 
 }
 
 export interface UserPositionETHForExactTokens {
-    amountInMax: BigNumber,
-    amountOut: BigNumber,
+    amountInMax: bigint,
+    amountOut: bigint,
     path: [string, string] 
 }

@@ -1,4 +1,4 @@
-import { BigNumber, ethers } from "ethers";
+import { ethers } from "ethers";
 import { parseEther } from "ethers/lib/utils";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
@@ -7,22 +7,22 @@ import { getDeadline, calcGasFeesOfTx } from "./helpers.test";
 
 export const swapExactETHForTokensLoopFromClass = function(
     iterations: number,
-    swapAmount: BigNumber
+    swapAmount: bigint
 ) {
-    let swappedAmounts: BigNumber[] = [];
+    let swappedAmounts: bigint[] = [];
     for(let i = 0; i < iterations; i++) {
-        const swappedAmount = uniPairClass.simulateSwapExactETHForTokens(swapAmount, BigNumber.from(1), [weth.address, token0.address]);
+        const swappedAmount = uniPairClass.simulateSwapExactETHForTokens(swapAmount, 1n, [weth.address, token0.address]);
         swappedAmounts.push(swappedAmount[1]);
     }
-    const totalSwapAmount = swappedAmounts.reduce((previousValue, currentValue) => previousValue.add(currentValue));
+    const totalSwapAmount = swappedAmounts.reduce((previousValue, currentValue) => previousValue + currentValue);
     return totalSwapAmount;
 }
 
 export const SwapETHForExactTokensLoopFromClass = function(
     iterations: number,
-    swapAmount: BigNumber
+    swapAmount: bigint
 ) {
-    let swappedAmounts: BigNumber[] = [];
+    let swappedAmounts: bigint[] = [];
     for(let i = 0; i < iterations; i++) {
         const swappedAmount = uniPairClass.simulateSwapETHForExactTokens(
             swapAmount,
@@ -30,32 +30,32 @@ export const SwapETHForExactTokensLoopFromClass = function(
         );
         swappedAmounts.push(swappedAmount[1]);
     }
-    const totalSwapAmount = swappedAmounts.reduce((previousValue, currentValue) => previousValue.add(currentValue));
+    const totalSwapAmount = swappedAmounts.reduce((previousValue, currentValue) => previousValue + currentValue);
     return totalSwapAmount;
 }
 
 export const swapExactTokensForETHLoopFromClass = function(
     iterations: number,
-    swapAmount: BigNumber
+    swapAmount: bigint
 ) {
-    let swappedAmounts: BigNumber[] = [];
+    let swappedAmounts: bigint[] = [];
     for(let i = 0; i < iterations; i++) {
         const swappedAmount = uniPairClass.simulateSwapExactTokensForEth(
             swapAmount, 
-            BigNumber.from(1), 
+            1n, 
             [token0.address, weth.address]
         );
         swappedAmounts.push(swappedAmount[1]);
     }
-    const totalSwapAmount = swappedAmounts.reduce((previousValue, currentValue) => previousValue.add(currentValue));
+    const totalSwapAmount = swappedAmounts.reduce((previousValue, currentValue) => previousValue + currentValue);
     return totalSwapAmount;
 }
 
 export const swapTokensForExactETHLoopFromClass = function(
     iterations: number,
-    swapAmountOut: BigNumber
+    swapAmountOut: bigint
 ) {
-    let swappedAmounts: BigNumber[] = [];
+    let swappedAmounts: bigint[] = [];
     for(let i = 0; i < iterations; i++) {
         const swappedAmount = uniPairClass.simulateSwapTokensForExactETH(
             swapAmountOut, 
@@ -63,43 +63,43 @@ export const swapTokensForExactETHLoopFromClass = function(
         );
         swappedAmounts.push(swappedAmount[1]);
     }
-    const totalSwapAmount = swappedAmounts.reduce((previousValue, currentValue) => previousValue.add(currentValue));
+    const totalSwapAmount = swappedAmounts.reduce((previousValue, currentValue) => previousValue + currentValue);
     return totalSwapAmount;
 }
 
 export const swapTokensForExactETHLoopFromContract = async function(
     iterations: number,
-    swapArgs: { signer: SignerWithAddress, swapAmount: BigNumber }
+    swapArgs: { signer: SignerWithAddress, swapAmount: bigint }
 ) {
-    let swapFees: BigNumber[] = [];
+    let swapFees: bigint[] = [];
     for(let i = 0; i < iterations; i++) {
         // const swap_fees = await swapExactEthForTokensFromContract(swapArgs.swapAmount, token0.address, swapArgs.signer);
         const swap_fees = await swapTokensForExactETHFromContract(swapArgs.signer, swapArgs.swapAmount);
         swapFees.push(swap_fees);
     }
-    const totalSwapFees = swapFees.reduce((previousValue, currentValue) => previousValue.add(currentValue));
+    const totalSwapFees = swapFees.reduce((previousValue, currentValue) => previousValue + currentValue);
     return totalSwapFees;
 }
 
 export const swapExactETHForTokensLoopFromContract = async function(
     iterations: number,
-    swapArgs: { signer: SignerWithAddress, swapAmount: BigNumber }
+    swapArgs: { signer: SignerWithAddress, swapAmount: bigint }
 ) {
-    let swapFees: BigNumber[] = [];
+    let swapFees: bigint[] = [];
     for(let i = 0; i < iterations; i++) {
         const swap_fees = await swapExactETHForTokensFromContract(swapArgs.swapAmount, swapArgs.signer);
         swapFees.push(swap_fees);
     }
 
-    const totalSwapFees = swapFees.reduce((previousValue, currentValue) => previousValue.add(currentValue));
+    const totalSwapFees = swapFees.reduce((previousValue, currentValue) => previousValue + currentValue);
     return totalSwapFees;
 }
 
 export const swapETHForExactTokensLoopFromContract = async function(
     iterations: number,
-    swapArgs: { swapAmount: BigNumber, signer: SignerWithAddress }
+    swapArgs: { swapAmount: bigint, signer: SignerWithAddress }
 ) {
-    let swapFees: BigNumber[] = [];
+    let swapFees: bigint[] = [];
     for(let i = 0; i < iterations; i++) {
         const amountIn0 = await router.getAmountsIn(
             swapArgs.swapAmount,
@@ -112,12 +112,12 @@ export const swapETHForExactTokensLoopFromContract = async function(
         );
         swapFees.push(swap_fees);
     }
-    const totalSwapFees = swapFees.reduce((previousValue, currentValue) => previousValue.add(currentValue));
+    const totalSwapFees = swapFees.reduce((previousValue, currentValue) => previousValue + currentValue);
     return totalSwapFees;
 }
 
 export const swapExactETHForTokensFromContract = async function(
-    exactAmountIn: BigNumber,
+    exactAmountIn: bigint,
     signer: SignerWithAddress
 ) {
     const tempRouter = router.connect(signer);
@@ -136,7 +136,7 @@ export const swapExactETHForTokensFromContract = async function(
 
 export const swapExactTokensForETHFromContract = async function(
     signer: SignerWithAddress,
-    swapAmount: BigNumber
+    swapAmount: bigint
 ) {
     const tempRouter = router.connect(signer);
 
@@ -161,12 +161,12 @@ export const swapExactTokensForETHFromContract = async function(
     );
     const tx_gasFees = await calcGasFeesOfTx(tx.hash);
 
-    return approve_gasFees.add(tx_gasFees);
+    return approve_gasFees + tx_gasFees;
 }
 
 export const swapTokensForExactETHFromContract = async function(
     signer: SignerWithAddress,
-    amountOut: BigNumber
+    amountOut: bigint
 ) {
     const tempRouter = router.connect(signer);
     const deadline = await getDeadline(deployer.provider!);
@@ -189,12 +189,12 @@ export const swapTokensForExactETHFromContract = async function(
     );
 
     const swap_fees = await calcGasFeesOfTx(swap_tx.hash);
-    return swap_fees.add(app_fees);
+    return swap_fees + app_fees;
 }
 
 export const swapETHForExactTokensFromContract = async function(
-    amountOut: BigNumber,
-    amountInMax: BigNumber,
+    amountOut: bigint,
+    amountInMax: bigint,
     signer: SignerWithAddress,
 ) {
 
@@ -213,14 +213,14 @@ export const swapETHForExactTokensFromContract = async function(
 
 export const swapExactTokensForETHLoopFromContract = async function(
     iterations: number,
-    swapArgs: { signer: SignerWithAddress, swapAmount: BigNumber }
+    swapArgs: { signer: SignerWithAddress, swapAmount: bigint }
 ) {
-    let swapFees: BigNumber[] = [];
+    let swapFees: bigint[] = [];
     for(let i = 0; i < iterations; i++) {
         const swap_fees = await swapExactTokensForETHFromContract(swapArgs.signer, swapArgs.swapAmount);
         swapFees.push(swap_fees);
     }
 
-    const totalSwapFees = swapFees.reduce((previousValue, currentValue) => previousValue.add(currentValue));
+    const totalSwapFees = swapFees.reduce((previousValue, currentValue) => previousValue + currentValue);
     return totalSwapFees;
 }

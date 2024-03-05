@@ -1,0 +1,1 @@
+export const ONE_ETHER = BigInt(10)**BigInt(18);
